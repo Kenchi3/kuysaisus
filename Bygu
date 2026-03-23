@@ -1,16 +1,28 @@
-local wanted = {[1]=true}
+local wanted = {[1]=true,[2]=true}
 
 local rs = game:GetService("ReplicatedStorage")
 local restart = rs.Remotes.Misc.Action
+local gui = game:GetService("StarterGui")
 
 local started = workspace.GameSettings.GameStarted
 local path = workspace.GameStates["Seven Sins Town"].ChosenPath
 
 local ready = true
 
+local function notify(text)
+    pcall(function()
+        gui:SetCore("SendNotification", {
+            Title = "Auto Path",
+            Text = text,
+            Duration = 3
+        })
+    end)
+end
+
 started:GetPropertyChangedSignal("Value"):Connect(function()
     if not started.Value then
         ready = true
+        notify("พร้อมเริ่มรอบใหม่")
         return
     end
 
@@ -19,7 +31,10 @@ started:GetPropertyChangedSignal("Value"):Connect(function()
 
     task.wait(0.5)
 
-    if not wanted[path.Value] then
+    if wanted[path.Value] then
+        notify("Path ตรงแล้ว! เล่นต่อได้ ✅")
+    else
+        notify("Path ไม่ตรง → Restart 🔁")
         restart:FireServer("Restart")
     end
 end)
