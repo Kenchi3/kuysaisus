@@ -1,4 +1,4 @@
-local wanted = {[1]=true,[2]=true}
+local wanted = {[1]=true}
 
 local rs = game:GetService("ReplicatedStorage")
 local restart = rs.Remotes.Misc.Action
