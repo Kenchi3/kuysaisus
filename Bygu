@@ -1,0 +1,25 @@
+local wanted = {[1]=true}
+
+local rs = game:GetService("ReplicatedStorage")
+local restart = rs.Remotes.Misc.Action
+
+local started = workspace.GameSettings.GameStarted
+local path = workspace.GameStates["Seven Sins Town"].ChosenPath
+
+local ready = true
+
+started:GetPropertyChangedSignal("Value"):Connect(function()
+    if not started.Value then
+        ready = true
+        return
+    end
+
+    if not ready then return end
+    ready = false
+
+    task.wait(0.5)
+
+    if not wanted[path.Value] then
+        restart:FireServer("Restart")
+    end
+end)
