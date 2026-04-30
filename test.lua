@@ -338,8 +338,7 @@ end
 
 local function openRaidChests()
     local chestsGui = Player.PlayerGui:FindFirstChild("Interface") and Player.PlayerGui.Interface:FindFirstChild("Chests")
-    if not chestsGui then return false end
-    if not chestsGui.Visible then return false end
+    if not chestsGui or not chestsGui.Visible then return false end
     
     local freeBtn = chestsGui:FindFirstChild("Free")
     local timeout = 0
