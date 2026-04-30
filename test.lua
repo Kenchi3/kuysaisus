@@ -339,6 +339,7 @@ end
 local function openRaidChests()
     local chestsGui = Player.PlayerGui:FindFirstChild("Interface") and Player.PlayerGui.Interface:FindFirstChild("Chests")
     if not chestsGui then return false end
+    if not chestsGui.Visible then return false end
     
     local freeBtn = chestsGui:FindFirstChild("Free")
     local timeout = 0
@@ -348,19 +349,19 @@ local function openRaidChests()
         freeBtn = chestsGui:FindFirstChild("Free")
     end
     
-    if freeBtn and freeBtn.Visible then
+    if freeBtn then
         selectAndPressEnter(freeBtn)
         task.wait(1.5)
     end
     
     local premiumBtn = chestsGui:FindFirstChild("Premium")
-    if premiumBtn and premiumBtn.Visible and Options.OpenPremiumChest.Value then
+    if premiumBtn and Options.OpenPremiumChest.Value then
         selectAndPressEnter(premiumBtn)
         task.wait(1.5)
     end
     
     local finishBtn = chestsGui:FindFirstChild("Finish")
-    if finishBtn and finishBtn.Visible then
+    if finishBtn then
         selectAndPressEnter(finishBtn)
         task.wait(1)
         return true
