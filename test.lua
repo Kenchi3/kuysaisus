@@ -348,19 +348,19 @@ local function openRaidChests()
         freeBtn = chestsGui:FindFirstChild("Free")
     end
     
-    if freeBtn then
+    if freeBtn and freeBtn.Visible then
         selectAndPressEnter(freeBtn)
         task.wait(1.5)
     end
     
     local premiumBtn = chestsGui:FindFirstChild("Premium")
-    if premiumBtn and Options.OpenPremiumChest.Value then
+    if premiumBtn and premiumBtn.Visible and Options.OpenPremiumChest.Value then
         selectAndPressEnter(premiumBtn)
         task.wait(1.5)
     end
     
     local finishBtn = chestsGui:FindFirstChild("Finish")
-    if finishBtn then
+    if finishBtn and finishBtn.Visible then
         selectAndPressEnter(finishBtn)
         task.wait(1)
         return true
@@ -524,7 +524,6 @@ if ButtonsFolder then
             end
         end
     end)
-else
 end
 -- Thread: Auto Retry & Open Chests
 spawn(function()
