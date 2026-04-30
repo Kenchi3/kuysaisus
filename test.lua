@@ -509,22 +509,23 @@ spawn(function()
         end
     end
 end)
-
-ButtonsFolder.ChildAdded:Connect(function(btn)
-    if Options.Autofarm.Value then
-        RootPart.Anchored = false
-        if BodyPos then BodyPos.MaxForce = Vector3.new(0,0,0) end
-        task.wait(0.15)
-        POST:FireServer("Attacks", "Slash_Escape")
-        btn:Destroy()
-        task.wait(0.3)
-        local targets, _ = getTargetCluster(1, 50)
-        if #targets > 0 then
-             executeMultiSlash(targets)
+if ButtonsFolder then
+    ButtonsFolder.ChildAdded:Connect(function(btn)
+        if Options.Autofarm.Value then
+            RootPart.Anchored = false
+            if BodyPos then BodyPos.MaxForce = Vector3.new(0,0,0) end
+            task.wait(0.15)
+            POST:FireServer("Attacks", "Slash_Escape")
+            btn:Destroy()
+            task.wait(0.3)
+            local targets, _ = getTargetCluster(1, 50)
+            if #targets > 0 then
+                executeMultiSlash(targets)
+            end
         end
-    end
-end)
-
+    end)
+else
+end
 -- Thread: Auto Retry & Open Chests
 spawn(function()
     while task.wait(1) do
