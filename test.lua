@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Humanized + OP Farm + Boss Burst",
+    SubTitle = "Humanized + OP Farm + Boss Priority",
     TabWidth = 160,
     Size = UDim2.fromOffset(600, 450),
     Acrylic = true, 
@@ -188,6 +188,19 @@ local function monitorRaidBosses()
     end)
 end
 
+-- 🔥 [ฟังก์ชันตรวจจับบอสแบบ Priority] ถ้ามีบอสและเปิดโหมด Burst ไว้ จะส่งจุดอ่อนบอสออกมาเลย
+local function getAvailableBossWeakPoint()
+    if not Options.BossBurst.Value then return nil end
+    for bossName, weakPoint in pairs(RaidBossWeakPoints) do
+        if weakPoint and weakPoint:IsA("BasePart") and weakPoint.Parent then
+            return weakPoint
+        else
+            RaidBossWeakPoints[bossName] = nil -- เคลียร์ข้อมูลถ้าบอสตายหรือ Part หาย
+        end
+    end
+    return nil
+end
+
 local function getTargetCluster(maxCount, radius)
     local closestPart, minDistance, anchorPosition = nil, math.huge, RootPart.Position
     if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPosition = p end end
@@ -310,16 +323,6 @@ local function executeBossBurst(bossPart, burstAmount)
     return true
 end
 
-local function findBossInTargets(targetArray)
-    if not Options.BossBurst.Value then return nil end
-    for _, t in ipairs(targetArray) do
-        for bossName, wp in pairs(RaidBossWeakPoints) do
-            if t == wp then return wp end
-        end
-    end
-    return nil
-end
-
 local function selectAndPressEnter(button)
     if button and button:IsA("GuiButton") then
         GuiService.SelectedObject = button; task.wait(0.3)
@@ -358,8 +361,8 @@ Tabs.Main:CreateToggle("OPFarm", {
 })
 
 Tabs.Main:CreateToggle("BossBurst", {
-    Title = "Raid Boss Burst (Danger)",
-    Description = "Spam massive hits on Boss Weakpoint (Works on both modes).",
+    Title = "Raid Boss Burst (Priority)",
+    Description = "Focus ONLY on Raid Boss if available (Ignores normal titans).",
     Default = false
 })
 
@@ -414,12 +417,11 @@ spawn(function()
             continue 
         end
 
-        -- ระบบ Anti-Gravity กันตก (ทำงานเมื่อกำลังเปิด Farm แต่ไม่ได้ Anchored)
+        -- ระบบ Anti-Gravity กันตก
         if not antiGravityConn then
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
                     RootPart.AssemblyLinearVelocity = Vector3.zero
-                    -- ล็อคความสูงถ้าเปิดโหมด Refill (OP Farm)
                     if savedHoverY then
                         RootPart.CFrame = CFrame.new(RootPart.CFrame.X, savedHoverY, RootPart.CFrame.Z)
                     end
@@ -451,6 +453,9 @@ spawn(function()
             end)
         end
 
+        -- ตรวจสอบก่อนว่ามีบอสอยู่ไหม (Priority Check)
+        local currentBossTarget = getAvailableBossWeakPoint()
+
         -- ==========================================
         -- [ โหมด OP FARM ]
         -- ==========================================
@@ -464,7 +469,6 @@ spawn(function()
             end
             
             if isBladeEmpty() then 
-                -- เก็บความสูงปัจจุบันไว้ก่อนปลด Anchor เพื่อจะได้ลอยค้างไว้ที่เดิม
                 savedHoverY = RootPart.CFrame.Y
                 RootPart.Anchored = false 
                 
@@ -474,17 +478,20 @@ spawn(function()
                 end
                 
                 RootPart.Anchored = true
-                savedHoverY = nil -- เคลียร์ค่าหลัง Refill เสร็จ
+                savedHoverY = nil 
             end
 
-            local allTargets = getAllTargets()
-            local limitedTargets = {}
-            for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
+            -- โฟกัสฟันบอสอย่างเดียวถ้ามี
+            if currentBossTarget then
+                executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+            else
+                local allTargets = getAllTargets()
+                local limitedTargets = {}
+                for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
 
-            if #limitedTargets > 0 then
-                local bossHit = findBossInTargets(limitedTargets)
-                if bossHit then executeBossBurst(bossHit, Options.BurstAmount.Value)
-                else executeOPSlash(limitedTargets) end
+                if #limitedTargets > 0 then
+                    executeOPSlash(limitedTargets) 
+                end
             end
             
             task.wait(Options.OPFarmDelay.Value)
@@ -497,7 +504,6 @@ spawn(function()
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
             
-            -- ระบบ Anti-Gravity จะคอยเคลียร์ความเร็วให้เรา ทำให้ไม่ตกลงพื้นตอน Refill
             if isBladeEmpty() then 
                 while isBladeEmpty() do
                     refillBlades()
@@ -505,22 +511,28 @@ spawn(function()
                 end
             end
             
-            local limit = Options.TargetLimit.Value
-            local radius = Options.AoERadius.Value
-            local baseDelay = Options.SlashDelay.Value
-            
-            local targets, anchorPos = getTargetCluster(limit, radius)
-
-            if #targets > 0 and anchorPos then
-                humanizedFlyTo(anchorPos)
+            -- โฟกัสฟันบอสอย่างเดียวถ้ามี
+            if currentBossTarget then
+                humanizedFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
                 
-                local bossHit = findBossInTargets(targets)
-                if bossHit then executeBossBurst(bossHit, Options.BurstAmount.Value)
-                else executeMultiSlash(targets) end
+                executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
+            else
+                local limit = Options.TargetLimit.Value
+                local radius = Options.AoERadius.Value
+                local baseDelay = Options.SlashDelay.Value
                 
-                task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
-            else task.wait(0.5) end
+                local targets, anchorPos = getTargetCluster(limit, radius)
+
+                if #targets > 0 and anchorPos then
+                    humanizedFlyTo(anchorPos)
+                    while isFlying do task.wait(0.05) end
+                    
+                    executeMultiSlash(targets)
+                    task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
+                else task.wait(0.5) end
+            end
         end
     end
 end)
@@ -547,20 +559,22 @@ if ButtonsFolder then
             POST:FireServer("Attacks", "Slash_Escape")
             btn:Destroy(); task.wait(0.3)
             
+            local currentBossTarget = getAvailableBossWeakPoint()
+            
             if Options.OPFarm.Value then
-                local t = getAllTargets(); local l = {}
-                for i = 1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end
-                if #l > 0 then
-                    local bossHit = findBossInTargets(l)
-                    if bossHit then executeBossBurst(bossHit, Options.BurstAmount.Value)
-                    else executeOPSlash(l) end
+                if currentBossTarget then
+                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                else
+                    local t = getAllTargets(); local l = {}
+                    for i = 1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end
+                    if #l > 0 then executeOPSlash(l) end
                 end
             else
-                local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
-                if #t > 0 then
-                    local bossHit = findBossInTargets(t)
-                    if bossHit then executeBossBurst(bossHit, Options.BurstAmount.Value)
-                    else executeMultiSlash(t) end
+                if currentBossTarget then
+                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                else
+                    local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
+                    if #t > 0 then executeMultiSlash(t) end
                 end
             end
         end
@@ -612,5 +626,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Smooth CFrame Flight Enabled!", Duration=5})
+Library:Notify({Title="Loaded", Content="Boss Priority & Anti-Gravity Enabled!", Duration=5})
 SaveManager:LoadAutoloadConfig()
