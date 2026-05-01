@@ -83,53 +83,39 @@ end
 local FLY_OFFSET = 100        
 local FAKE_VELOCITY = 220
 
-local BodyPos = nil
-local BodyGyro = nil
-local isFlying = false
 local NoclipConnection = nil
 
-local function setupMovers()
-    if not RootPart then return end
-    if not RootPart:FindFirstChild("FlightPos") then
-        BodyPos = Instance.new("BodyPosition")
-        BodyPos.Name = "FlightPos"
-        BodyPos.MaxForce = Vector3.new(0, 0, 0)
-        BodyPos.P = 4000
-        BodyPos.Parent = RootPart
-    else
-        BodyPos = RootPart.FlightPos
-    end
-
-    if not RootPart:FindFirstChild("FlightGyro") then
-        BodyGyro = Instance.new("BodyGyro")
-        BodyGyro.Name = "FlightGyro"
-        BodyGyro.MaxTorque = Vector3.new(0, 0, 0)
-        BodyGyro.P = 20000
-        BodyGyro.Parent = RootPart
-    else
-        BodyGyro = RootPart.FlightGyro
-    end
-end
 
 local function flyToTarget(targetPos)
-    if not RootPart or not BodyPos or not BodyGyro then return end
+    if not RootPart then return end
+    
+    -- ตั้งค่า Tween (ปรับ EasingStyle ให้เป็น Quart/Expo เพื่อความเนียนแบบเหวี่ยง)
+    local distance = (RootPart.Position - targetPos).Magnitude
+    local speed = 150 -- ความเร็ว (Studs per second)
+    local timeToFly = distance / speed
+    
+    local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
+    
+    local TweenInfo = TweenInfo.new(
+        timeToFly, 
+        Enum.EasingStyle.Quart, -- Quint, Quart หรือ Expo ดูเนียนมากสำหรับการพุ่ง
+        Enum.EasingDirection.Out -- ช้าลงตอนถึงเป้าหมาย
+    )
+    
+    local Goal = {CFrame = CFrame.new(goalPos)}
+    local Tween = TweenService:Create(RootPart, TweenInfo, Goal)
+    
+    -- เตรียมตัวละคร
     RootPart.Anchored = false
     Humanoid.PlatformStand = true
-    local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
-    BodyPos.Position = goalPos
-    BodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    BodyGyro.CFrame = CFrame.new(RootPart.Position, goalPos)
-    BodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    isFlying = true
-    repeat 
-        task.wait(0.05)
-        BodyPos.Position = goalPos
-        BodyGyro.CFrame = CFrame.new(RootPart.Position, goalPos)
-    until (RootPart.Position - goalPos).Magnitude < 8 or Humanoid.Health <= 0
-    isFlying = false
-    BodyPos.MaxForce = Vector3.new(0, 0, 0)
-    BodyGyro.MaxTorque = Vector3.new(0, 0, 0)
-    RootPart.Anchored = true
+    RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) -- ล้างแรงเฉื่อย
+    
+    Tween:Play()
+    Tween.Completed:Wait() -- รอจนกว่าจะพุ่งถึง
+    
+    -- ถึงแล้ว (สามารถเปลี่ยนเป็น Anchored หรือใช้ AlignPosition รั้งไว้กลางอากาศได้)
+    RootPart.Anchored = true 
+    Humanoid.PlatformStand = false
 end
 
 local function findNearestStation()
