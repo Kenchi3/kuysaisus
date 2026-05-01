@@ -94,7 +94,7 @@ local function setupMovers()
         BodyPos = Instance.new("BodyPosition")
         BodyPos.Name = "FlightPos"
         BodyPos.MaxForce = Vector3.new(0, 0, 0)
-        BodyPos.P = 6000
+        BodyPos.P = 4000
         BodyPos.Parent = RootPart
     else
         BodyPos = RootPart.FlightPos
