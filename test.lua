@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "BodyMovers + Noclip + Raid",
+    SubTitle = "Smooth Tween + Noclip + Raid",
     TabWidth = 160,
     Size = UDim2.fromOffset(600, 450),
     Acrylic = true, 
@@ -31,6 +31,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
+local TweenService = game:GetService("TweenService") -- 🔥 เพิ่ม TweenService
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -47,8 +48,6 @@ local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface
 -- [ระบบ Raid]
 local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
-
--- 🔥 [เปลี่ยนแปลง] เก็บจุดอ่อนของ Raid Boss เป็นตาราง รองรับหลายตัว
 local RaidBossWeakPoints = {} 
 
 local function getRaidAnchorPos()
@@ -82,40 +81,69 @@ end
 -- ==========================================
 local FLY_OFFSET = 100        
 local FAKE_VELOCITY = 220
+local FLY_SPEED = 150 -- 🔥 ความเร็วในการบิน (Studs per second) ยิ่งสูงยิ่งพุ่งเร็ว
 
+local isFlying = false
 local NoclipConnection = nil
+local currentFlightTween = nil -- 🔥 เก็บตัวแปร Tween ปัจจุบัน
 
+-- 🔥 ลบฟังก์ชัน setupMovers ทิ้งได้เลยเพราะ Tween ไม่ต้องสร้าง Mover ใดๆ
 
 local function flyToTarget(targetPos)
     if not RootPart then return end
     
-    -- ตั้งค่า Tween (ปรับ EasingStyle ให้เป็น Quart/Expo เพื่อความเนียนแบบเหวี่ยง)
-    local distance = (RootPart.Position - targetPos).Magnitude
-    local speed = 200 -- ความเร็ว (Studs per second)
-    local timeToFly = distance / speed
-    
-    local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
-    
-    local TweenInfo = TweenInfo.new(
-        timeToFly, 
-        Enum.EasingStyle.Quart, -- Quint, Quart หรือ Expo ดูเนียนมากสำหรับการพุ่ง
-        Enum.EasingDirection.Out -- ช้าลงตอนถึงเป้าหมาย
-    )
-    
-    local Goal = {CFrame = CFrame.new(goalPos)}
-    local Tween = TweenService:Create(RootPart, TweenInfo, Goal)
-    
+    -- ถ้ามี Tween เก่ากำลังทำงาน ให้ยกเลิกก่อน (กันพุ่งชนเพราะค้าง)
+    if currentFlightTween then
+        currentFlightTween:Cancel()
+        currentFlightTween = nil
+    end
+
     -- เตรียมตัวละคร
     RootPart.Anchored = false
     Humanoid.PlatformStand = true
-    RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) -- ล้างแรงเฉื่อย
+    RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0) -- ล้างแรงเฉื่อย
+    RootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
     
-    Tween:Play()
-    Tween.Completed:Wait() -- รอจนกว่าจะพุ่งถึง
+    local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
+    local distance = (RootPart.Position - goalPos).Magnitude
     
-    -- ถึงแล้ว (สามารถเปลี่ยนเป็น Anchored หรือใช้ AlignPosition รั้งไว้กลางอากาศได้)
-    RootPart.Anchored = true 
-    Humanoid.PlatformStand = false
+    -- 🔥 คำนวณเวลาบินจากระยะทาง (ทำให้ความเร็วคงที่)
+    local flightTime = math.clamp(distance / FLY_SPEED, 0.1, 3) -- ต่ำสุด 0.1 วิ, สูงสุด 3 วิ
+    
+    -- 🔥 ตั้งค่าความเนียน (Easing)
+    local tweenInfo = TweenInfo.new(
+        flightTime, 
+        Enum.EasingStyle.Sine, -- Sine หรือ Quart คือเนียนสุดแบบลื่นไหล ไม่ดีด
+        Enum.EasingDirection.Out -- เริ่มเร็ว แล้วโลดลงนุ่มนวลตอนถึงเป้าหมาย
+    )
+    
+    local goalCFrame = CFrame.new(goalPos)
+    currentFlightTween = TweenService:Create(RootPart, tweenInfo, {CFrame = goalCFrame})
+    
+    isFlying = true
+    currentFlightTween:Play()
+    
+    -- รอจนกว่า Tween จะเสร็จ หรือตัวละครตาย
+    local connection
+    connection = currentFlightTween.Completed:Connect(function()
+        connection:Disconnect()
+        if isFlying then -- เช็คว่ายังบินอยู่จริงๆ (ไม่ได้ถูกยกเลิกไปแล้ว)
+            isFlying = false
+            RootPart.Anchored = true -- ตรึงตัวเมื่อถึงเพื่อความแม่นยำตอนตี
+        end
+    end)
+    
+    -- ถ้าตัวละครตายระหว่างบิน ให้หยุด
+    spawn(function()
+        while isFlying do
+            if Humanoid.Health <= 0 then
+                if currentFlightTween then currentFlightTween:Cancel() end
+                isFlying = false
+                break
+            end
+            task.wait(0.1)
+        end
+    end)
 end
 
 local function findNearestStation()
@@ -164,22 +192,16 @@ local function isBladeEmpty()
     return false
 end
 
--- 🔥 [เปลี่ยนแปลง] ระบบ Monitor รองรับการติดตามหลาย Boss
 local function trackBossWeakPoint(bossModel)
     if not bossModel then return end
-    
     local marker = bossModel:FindFirstChild("Marker") or bossModel:WaitForChild("Marker", 30)
     if not marker then return end
 
-    -- บันทึกจุดอ่อนปัจจุบันของบอสตัวนี้
     RaidBossWeakPoints[bossModel.Name] = marker.Adornee
-
-    -- ติดตามเมื่อจุดอ่อนเปลี่ยน
     marker:GetPropertyChangedSignal("Adornee"):Connect(function()
         RaidBossWeakPoints[bossModel.Name] = marker.Adornee
     end)
 
-    -- ล้างข้อมูลเมื่อบอสตาย
     local hum = bossModel:FindFirstChildOfClass("Humanoid")
     if hum then
         hum.Died:Connect(function()
@@ -190,25 +212,13 @@ end
 
 local function monitorRaidBosses()
     if not isRaidMap then return end
-    
-    -- แยก Thread ติดตาม Attack_Titan
     task.spawn(function()
-        local success, attackTitan = pcall(function()
-            return TitansFolder:WaitForChild("Attack_Titan", 300)
-        end)
-        if success and attackTitan then 
-            trackBossWeakPoint(attackTitan) 
-        end
+        local success, attackTitan = pcall(function() return TitansFolder:WaitForChild("Attack_Titan", 300) end)
+        if success and attackTitan then trackBossWeakPoint(attackTitan) end
     end)
-
-    -- แยก Thread ติดตาม Armored_Titan
     task.spawn(function()
-        local success, armoredTitan = pcall(function()
-            return TitansFolder:WaitForChild("Armored_Titan", 300)
-        end)
-        if success and armoredTitan then 
-            trackBossWeakPoint(armoredTitan) 
-        end
+        local success, armoredTitan = pcall(function() return TitansFolder:WaitForChild("Armored_Titan", 300) end)
+        if success and armoredTitan then trackBossWeakPoint(armoredTitan) end
     end)
 end
 
@@ -221,9 +231,7 @@ local function getTargetCluster(maxCount, radius)
     local anchorPosition = RootPart.Position
     if isRaidMap then
         local atPos = getRaidAnchorPos()
-        if atPos then
-            anchorPosition = atPos
-        end
+        if atPos then anchorPosition = atPos end
     end
 
     for _, titan in ipairs(TitansFolder:GetChildren()) do
@@ -231,17 +239,12 @@ local function getTargetCluster(maxCount, radius)
             local hum = titan:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 and titan:FindFirstChild("Hitboxes") then
                 local targetPart = nil
-                
-                -- 🔥 [เปลี่ยนแปลง] เช็คว่าเป็น Raid Boss ที่มีจุดอ่อนโผล่มาไหม
                 if isRaidMap and RaidBossWeakPoints[titan.Name] then
                     targetPart = RaidBossWeakPoints[titan.Name]
                 else
                     local hitFolder = titan.Hitboxes:FindFirstChild("Hit")
-                    if hitFolder then
-                        targetPart = hitFolder:FindFirstChild("Nape")
-                    end
+                    if hitFolder then targetPart = hitFolder:FindFirstChild("Nape") end
                 end
-
                 if targetPart then
                     local dist = (anchorPosition - targetPart.Position).Magnitude
                     if dist < minDistance then
@@ -261,17 +264,12 @@ local function getTargetCluster(maxCount, radius)
             local hum = titan:FindFirstChildOfClass("Humanoid")
             if hum and hum.Health > 0 and titan:FindFirstChild("Hitboxes") then
                 local targetPart = nil
-                
-                -- 🔥 [เปลี่ยนแปลง] เช็คว่าเป็น Raid Boss ที่มีจุดอ่อนโผล่มาไหม
                 if isRaidMap and RaidBossWeakPoints[titan.Name] then
                     targetPart = RaidBossWeakPoints[titan.Name]
                 else
                     local hitFolder = titan.Hitboxes:FindFirstChild("Hit")
-                    if hitFolder then
-                        targetPart = hitFolder:FindFirstChild("Nape")
-                    end
+                    if hitFolder then targetPart = hitFolder:FindFirstChild("Nape") end
                 end
-
                 if targetPart then
                     local distToMainTarget = (targetPart.Position - closestPart.Position).Magnitude
                     if distToMainTarget <= radius then
@@ -301,9 +299,7 @@ local function executeMultiSlash(napesArray)
     for _, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                pcall(function()
-                    GET:InvokeServer("Hitboxes", "Register", napePart, FAKE_VELOCITY, math.random(10, 100))
-                end)
+                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, FAKE_VELOCITY, math.random(10, 100)) end)
             end)
         end
     end
@@ -325,46 +321,24 @@ end
 local function openRaidChests()
     local chestsGui = Player.PlayerGui:FindFirstChild("Interface") and Player.PlayerGui.Interface:FindFirstChild("Chests")
     if not chestsGui or not chestsGui.Visible then return false end
-    
     local freeBtn = chestsGui:FindFirstChild("Free")
     local timeout = 0
-    while not freeBtn and timeout < 15 do
-        task.wait(1)
-        timeout = timeout + 1
-        freeBtn = chestsGui:FindFirstChild("Free")
-    end
-    
-    if freeBtn then
-        selectAndPressEnter(freeBtn)
-        task.wait(1.5)
-    end
-    
+    while not freeBtn and timeout < 15 do task.wait(1); timeout = timeout + 1; freeBtn = chestsGui:FindFirstChild("Free") end
+    if freeBtn then selectAndPressEnter(freeBtn); task.wait(1.5) end
     local premiumBtn = chestsGui:FindFirstChild("Premium")
-    if premiumBtn and Options.OpenPremiumChest.Value then
-        selectAndPressEnter(premiumBtn)
-        task.wait(1.5)
-    end
-    
+    if premiumBtn and Options.OpenPremiumChest.Value then selectAndPressEnter(premiumBtn); task.wait(1.5) end
     local finishBtn = chestsGui:FindFirstChild("Finish")
-    if finishBtn then
-        selectAndPressEnter(finishBtn)
-        task.wait(1)
-        return true
-    end
-    
+    if finishBtn then selectAndPressEnter(finishBtn); task.wait(1); return true end
     return false
 end
 
 local function isRaidCompleted()
     local interface = Player.PlayerGui:FindFirstChild("Interface")
     if not interface then return false end
-    
     local chests = interface:FindFirstChild("Chests")
     local rewards = interface:FindFirstChild("Rewards")
-    
     if chests and chests.Visible then return true end
     if rewards and rewards.Visible then return true end
-    
     return false
 end
 
@@ -372,45 +346,22 @@ end
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
 Tabs.Main:CreateToggle("Autofarm", {
-    Title = "Auto Farm (BodyMovers)",
-    Description = "Auto enables Noclip & Skip while farming.",
-    Default = false,
-    Callback = function() end
+    Title = "Auto Farm (Smooth Tween)",
+    Description = "Buttery smooth flight & Auto Skip.",
+    Default = false
 })
 
-Tabs.Main:CreateSlider("TargetLimit", {
-    Title = "Target Limit",
-    Min = 1, Max = 10, Default = 3, Rounding = 0
-})
-
-Tabs.Main:CreateSlider("AoERadius", {
-    Title = "AoE Radius (Slash Range)",
-    Min = 50, Max = 1000, Default = 200, Rounding = 0
-})
-
-Tabs.Main:CreateSlider("SlashDelay", {
-    Title = "Slash Delay",
-    Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1
-})
-
-Tabs.Main:CreateToggle("OpenPremiumChest", {
-    Title = "Open Premium Chest",
-    Default = false,
-    Callback = function() end
-})
-
-Tabs.Main:CreateToggle("AutoRetry", {
-    Title = "Auto Retry",
-    Default = false,
-    Callback = function() end
-})
+Tabs.Main:CreateSlider("TargetLimit", { Title = "Target Limit", Min = 1, Max = 10, Default = 3, Rounding = 0 })
+Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 200, Rounding = 0 })
+Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
+Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
+Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
 
 -- ==========================================
 -- [ 5. Threads ]
 -- ==========================================
 spawn(function()
-    setupMovers()
-    -- เปลี่ยนมาเรียกฟังก์ชันที่รองรับหลายบอส
+    -- ไม่ต้อง setupMovers แล้ว
     spawn(monitorRaidBosses)
     
     while task.wait(0.1) do
@@ -418,47 +369,41 @@ spawn(function()
             Character = Player.Character or Player.CharacterAdded:Wait()
             RootPart = Character:WaitForChild("HumanoidRootPart")
             Humanoid = Character:WaitForChild("Humanoid")
-            setupMovers()
             task.wait(2)
         end
 
         if not Options.Autofarm.Value then 
+            -- 🔥 ยกเลิก Tween ถ้าปิด AutoFarm ระหว่างบิน
+            if currentFlightTween then
+                currentFlightTween:Cancel()
+                currentFlightTween = nil
+            end
+            
             Humanoid.PlatformStand = false
             RootPart.Anchored = false
-            if BodyPos then BodyPos.MaxForce = Vector3.new(0,0,0) end
-            if BodyGyro then BodyGyro.MaxTorque = Vector3.new(0,0,0) end
+            
             if NoclipConnection then
                 NoclipConnection:Disconnect()
                 NoclipConnection = nil
                 if Character then
                     for _, part in pairs(Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = true
-                        end
+                        if part:IsA("BasePart") then part.CanCollide = true end
                     end
                 end
             end
             continue 
         end
 
-        local success, skipGui = pcall(function()
-            return Player.PlayerGui.Interface.Skip
-        end)
-
+        local success, skipGui = pcall(function() return Player.PlayerGui.Interface.Skip end)
         if success and skipGui and skipGui.Visible then
             local interactBtn = skipGui:FindFirstChild("Interact")
-            
             if interactBtn and interactBtn:IsA("GuiButton") then
                 pcall(function()
-                    GuiService.SelectedObject = interactBtn
-                    task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-                    task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-                    task.wait(0.1)
+                    GuiService.SelectedObject = interactBtn; task.wait(0.1)
+                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.05)
+                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.1)
                     GuiService.SelectedObject = nil
                 end)
-                
                 task.wait(0.5)
             end
         end
@@ -467,18 +412,13 @@ spawn(function()
             NoclipConnection = RunService.Stepped:Connect(function()
                 if Character then
                     for _, part in pairs(Character:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            part.CanCollide = false
-                        end
+                        if part:IsA("BasePart") then part.CanCollide = false end
                     end
                 end
             end)
         end
 
-        if isBladeEmpty() then
-            refillBlades()
-            task.wait(0.5)
-        end
+        if isBladeEmpty() then refillBlades(); task.wait(0.5) end
 
         local limit = Options.TargetLimit.Value
         local radius = Options.AoERadius.Value
@@ -495,31 +435,34 @@ spawn(function()
         end
     end
 end)
+
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value then
+            -- 🔥 ยกเลิก Tween ทันทีถ้าโดนจับต้องหนี
+            if currentFlightTween then
+                currentFlightTween:Cancel()
+                currentFlightTween = nil
+            end
+            
             RootPart.Anchored = false
-            if BodyPos then BodyPos.MaxForce = Vector3.new(0,0,0) end
             task.wait(0.15)
             POST:FireServer("Attacks", "Slash_Escape")
             btn:Destroy()
             task.wait(0.3)
             local targets, _ = getTargetCluster(1, 50)
-            if #targets > 0 then
-                executeMultiSlash(targets)
-            end
+            if #targets > 0 then executeMultiSlash(targets) end
         end
     end)
 end
+
 -- Thread: Auto Retry & Open Chests
 spawn(function()
     while task.wait(1) do
         if not Options.AutoRetry.Value then continue end
-
         if isRaidMap then
             if isRaidCompleted() then
-                openRaidChests()
-                task.wait(1.5)
+                openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 task.wait(3)
             end
@@ -532,11 +475,7 @@ spawn(function()
                     end
                 end
             end
-
-            if aliveTitans == 0 then
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                task.wait(3)
-            end
+            if aliveTitans == 0 then pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); task.wait(3) end
         end
     end
 end)
@@ -560,29 +499,15 @@ end
 task.spawn(function()
     local autosaveName = getAutoSaveFile()
     local autosaveFile = SaveManager.Folder .. "/settings/" .. autosaveName .. ".json"
-
     if isfile(autosaveFile) then
         local success = SaveManager:Load(autosaveName)
-        if success then
-            Library:Notify({
-                Title    = "Config",
-                Content  = "Auto-loaded",
-                Duration = 3,
-            })
-        end
+        if success then Library:Notify({ Title = "Config", Content = "Auto-loaded", Duration = 3 }) end
     end
 end)
 
-local function autoSave()
-    SaveManager:Save(getAutoSaveFile())
-end
-
-for _, option in pairs(Options) do
-    if option.OnChanged then
-        option:OnChanged(autoSave)
-    end
-end
+local function autoSave() SaveManager:Save(getAutoSaveFile()) end
+for _, option in pairs(Options) do if option.OnChanged then option:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Auto Farm Ready 🔥", Duration=5})
+Library:Notify({Title="Loaded", Content="Smooth Tween Ready 🔥", Duration=5})
 SaveManager:LoadAutoloadConfig()
