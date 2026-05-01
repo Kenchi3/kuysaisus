@@ -80,7 +80,7 @@ end
 -- [ 3. ฟังก์ชันระบบทำงาน (Humanized Version) ]
 -- ==========================================
 local FLY_OFFSET = 100
-local FLY_SPEED = 150
+local FLY_SPEED = 200
 local JITTER_AMOUNT = 2 
 local FAKE_VELOCITY = 220 -- 🔥 [สำคัญ] เพิ่มกลับมาเพราะ executeMultiSlash ต้องใช้
 
