@@ -83,7 +83,7 @@ end
 -- [ 3. ฟังก์ชันระบบทำงาน (Humanized Version) ]
 -- ==========================================
 local FLY_OFFSET = 100
-local FLY_SPEED = 200
+local FLY_SPEED = 300
 local JITTER_AMOUNT = 2 
 local FAKE_VELOCITY = 220
 
