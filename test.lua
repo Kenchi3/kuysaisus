@@ -91,7 +91,7 @@ local function flyToTarget(targetPos)
     
     -- ตั้งค่า Tween (ปรับ EasingStyle ให้เป็น Quart/Expo เพื่อความเนียนแบบเหวี่ยง)
     local distance = (RootPart.Position - targetPos).Magnitude
-    local speed = 150 -- ความเร็ว (Studs per second)
+    local speed = 200 -- ความเร็ว (Studs per second)
     local timeToFly = distance / speed
     
     local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
