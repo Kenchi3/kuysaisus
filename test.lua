@@ -77,72 +77,79 @@ local function getRaidAnchorPos()
 end
 
 -- ==========================================
--- [ 3. ฟังก์ชันระบบทำงาน ]
+-- [ 3. ฟังก์ชันระบบทำงาน (Humanized Version) ]
 -- ==========================================
-local FLY_OFFSET = 100        
-local FAKE_VELOCITY = 220
-local FLY_SPEED = 150 -- 🔥 ความเร็วในการบิน (Studs per second) ยิ่งสูงยิ่งพุ่งเร็ว
+local FLY_OFFSET = 100
+local FLY_SPEED = 150
+local JITTER_AMOUNT = 2 -- ค่าความ "สั่น" ของมนุษย์ (ยิ่งสูงยิ่งเหมือนมือสั่น/ปรับเล็ง)
 
 local isFlying = false
 local NoclipConnection = nil
-local currentFlightTween = nil -- 🔥 เก็บตัวแปร Tween ปัจจุบัน
+local flightConnection = nil -- ใช้สำหรับ RunService loop
 
--- 🔥 ลบฟังก์ชัน setupMovers ทิ้งได้เลยเพราะ Tween ไม่ต้องสร้าง Mover ใดๆ
-
-local function flyToTarget(targetPos)
+-- [Humanized Flight Function]
+-- ใช้ RunService แทน Tween เพื่อให้ควบคุมความเป็นธรรมชาติได้มากกว่า
+local function humanizedFlyTo(targetPos)
     if not RootPart then return end
-    
-    -- ถ้ามี Tween เก่ากำลังทำงาน ให้ยกเลิกก่อน (กันพุ่งชนเพราะค้าง)
-    if currentFlightTween then
-        currentFlightTween:Cancel()
-        currentFlightTween = nil
-    end
-
-    -- เตรียมตัวละคร
-    RootPart.Anchored = false
-    Humanoid.PlatformStand = true
-    RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0) -- ล้างแรงเฉื่อย
-    RootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-    
-    local goalPos = targetPos + Vector3.new(0, FLY_OFFSET, 0)
-    local distance = (RootPart.Position - goalPos).Magnitude
-    
-    -- 🔥 คำนวณเวลาบินจากระยะทาง (ทำให้ความเร็วคงที่)
-    local flightTime = math.clamp(distance / FLY_SPEED, 0.1, 3) -- ต่ำสุด 0.1 วิ, สูงสุด 3 วิ
-    
-    -- 🔥 ตั้งค่าความเนียน (Easing)
-    local tweenInfo = TweenInfo.new(
-        flightTime, 
-        Enum.EasingStyle.Sine, -- Sine หรือ Quart คือเนียนสุดแบบลื่นไหล ไม่ดีด
-        Enum.EasingDirection.Out -- เริ่มเร็ว แล้วโลดลงนุ่มนวลตอนถึงเป้าหมาย
-    )
-    
-    local goalCFrame = CFrame.new(goalPos)
-    currentFlightTween = TweenService:Create(RootPart, tweenInfo, {CFrame = goalCFrame})
+    if isFlying then return end -- กันกดซ้ำ
     
     isFlying = true
-    currentFlightTween:Play()
+    RootPart.Anchored = false
+    Humanoid.PlatformStand = true
     
-    -- รอจนกว่า Tween จะเสร็จ หรือตัวละครตาย
-    local connection
-    connection = currentFlightTween.Completed:Connect(function()
-        connection:Disconnect()
-        if isFlying then -- เช็คว่ายังบินอยู่จริงๆ (ไม่ได้ถูกยกเลิกไปแล้ว)
+    -- ล้างความเร็วเก่าก่อน
+    RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    
+    local goalPos = targetPos + Vector3.new(
+        math.random(-5, 5), -- เพิ่มความไม่แน่นอนในแกน X
+        FLY_OFFSET + math.random(-2, 2), -- เพิ่มความไม่แน่นอนในแกน Y
+        math.random(-5, 5) -- เพิ่มความไม่แน่นอนในแกน Z
+    )
+
+    -- ใช้ RunService Heartbeat (ทำงานทุกเฟรม)
+    if flightConnection then flightConnection:Disconnect() end
+    
+    flightConnection = RunService.Heartbeat:Connect(function(dt)
+        if not isFlying then return end
+        
+        -- คำนวณทิศทาง
+        local direction = (goalPos - RootPart.Position)
+        local distance = direction.Magnitude
+        
+        -- ถึงเป้าหมายแล้ว
+        if distance < 5 then
             isFlying = false
-            RootPart.Anchored = true -- ตรึงตัวเมื่อถึงเพื่อความแม่นยำตอนตี
-        end
-    end)
-    
-    -- ถ้าตัวละครตายระหว่างบิน ให้หยุด
-    spawn(function()
-        while isFlying do
-            if Humanoid.Health <= 0 then
-                if currentFlightTween then currentFlightTween:Cancel() end
-                isFlying = false
-                break
+            -- ตรึงตัวแบบนุ่มนวล (อาจจะไม่ Anchored เลยถ้าต้องการให้ลอยตัวตามฟิสิกส์)
+            RootPart.Anchored = true 
+            
+            if flightConnection then 
+                flightConnection:Disconnect() 
+                flightConnection = nil 
             end
-            task.wait(0.1)
+            return
         end
+
+        -- ปลอมความเร็ว (Spoof Velocity) เพื่อหลอกเซิร์ฟเวอร์ว่าเรากำลังเคลื่อนที่จริง
+        local velocityVector = direction.Unit * FLY_SPEED
+        
+        -- [Anti-Cheat Bypass Trick]
+        -- ตั้งค่า Velocity ให้ตรงกับทิศทางบิน ทำให้เซิร์ฟเวอร์เห็นว่าเราเคลื่อนที่เอง
+        RootPart.AssemblyLinearVelocity = velocityVector
+        
+        -- ย้ายตัว (CFrame) แต่เพิ่ม Jitter (ความสั่นไหวเล็กน้อย) เพื่อให้ดูไม่เป็นหุ่นยนต์
+        -- คำนวณตำแหน่งใหม่โดยคิดความเร็ว dt (Delta Time) คูณกับความเร็ว
+        local moveStep = direction.Unit * (FLY_SPEED * dt)
+        
+        -- เพิ่ม Noise (Randomness) ตอนบิน
+        local jitter = Vector3.new(
+            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
+            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
+            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2
+        )
+        
+        -- อัพเดท CFrame (ห้ามใช้ RootPart.Position โดยตรง ให้ CFrame เพื่อรักษามุมมอง)
+        -- แต่เราจะไม่ยุ่งกับการหมุนตัว (Rotation) เพื่อให้ดูธรรมชาติ
+        RootPart.CFrame = RootPart.CFrame + moveStep + jitter
     end)
 end
 
@@ -358,14 +365,18 @@ Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Defau
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
 
 -- ==========================================
--- [ 5. Threads ]
+-- ==========================================
+-- [ Loop หลักที่ปรับปรุงแล้ว ]
 -- ==========================================
 spawn(function()
-    -- ไม่ต้อง setupMovers แล้ว
     spawn(monitorRaidBosses)
     
     while task.wait(0.1) do
+        -- รีเซ็ตตัวแปรถ้าตาย
         if Humanoid.Health <= 0 then
+            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
+            isFlying = false
+            
             Character = Player.Character or Player.CharacterAdded:Wait()
             RootPart = Character:WaitForChild("HumanoidRootPart")
             Humanoid = Character:WaitForChild("Humanoid")
@@ -373,12 +384,9 @@ spawn(function()
         end
 
         if not Options.Autofarm.Value then 
-            -- 🔥 ยกเลิก Tween ถ้าปิด AutoFarm ระหว่างบิน
-            if currentFlightTween then
-                currentFlightTween:Cancel()
-                currentFlightTween = nil
-            end
-            
+            -- เคลียร์ทุกอย่างเมื่อปิด
+            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
+            isFlying = false
             Humanoid.PlatformStand = false
             RootPart.Anchored = false
             
@@ -394,23 +402,24 @@ spawn(function()
             continue 
         end
 
+        -- [Auto Skip UI] (เหมือนเดิม)
         local success, skipGui = pcall(function() return Player.PlayerGui.Interface.Skip end)
         if success and skipGui and skipGui.Visible then
             local interactBtn = skipGui:FindFirstChild("Interact")
             if interactBtn and interactBtn:IsA("GuiButton") then
-                pcall(function()
-                    GuiService.SelectedObject = interactBtn; task.wait(0.1)
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.05)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.1)
-                    GuiService.SelectedObject = nil
-                end)
-                task.wait(0.5)
+                -- กดปุ่มแบบมนุษย์ (ไม่ทันที)
+                task.wait(math.random(100, 300)/1000)
+                GuiService.SelectedObject = interactBtn; task.wait(0.1)
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.1)
+                GuiService.SelectedObject = nil
             end
         end
 
+        -- [Noclip] (ทำให้ลื่นไหลกว่าเดิม)
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
-                if Character then
+                if Character and Options.Autofarm.Value then
                     for _, part in pairs(Character:GetDescendants()) do
                         if part:IsA("BasePart") then part.CanCollide = false end
                     end
@@ -422,16 +431,23 @@ spawn(function()
 
         local limit = Options.TargetLimit.Value
         local radius = Options.AoERadius.Value
-        local delay = Options.SlashDelay.Value
+        
+        -- [Humanized Delay]
+        -- อ่านค่า Delay จาก UI แต่เพิ่มความสุ่มเข้าไป
+        local baseDelay = Options.SlashDelay.Value
+        local randomDelay = baseDelay + math.random(-0.1, 0.2) 
 
         local targets, anchorPos = getTargetCluster(limit, radius)
 
         if #targets > 0 and anchorPos then
-            flyToTarget(anchorPos)
+            humanizedFlyTo(anchorPos)
+            j7nu
+            while isFlying do task.wait(0.05) end
+            
             executeMultiSlash(targets)
-            task.wait(delay)
+            task.wait(math.max(0.1, randomDelay)) -- ใช้ Delay ที่ random แล้ว
         else
-            task.wait()
+            task.wait(0.5)
         end
     end
 end)
