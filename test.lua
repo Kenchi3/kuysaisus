@@ -93,14 +93,13 @@ local flightConnection = nil
 
 -- [Humanized Flight Function]
 local function humanizedFlyTo(targetPos)
-    if not RootPart then return end
-    if isFlying then return end 
-    
+    if not RootPart or isFlying then return end 
     isFlying = true
     RootPart.Anchored = false
     Humanoid.PlatformStand = true
     
-    RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    -- เพิ่ม Gravity ให้ตัวละครดูเป็นธรรมชาติ (ไม่ลอยนิ่งๆ)
+    local gravity = Vector3.new(0, -30, 0)
     
     local goalPos = targetPos + Vector3.new(
         math.random(-5, 5), 
@@ -118,28 +117,15 @@ local function humanizedFlyTo(targetPos)
         
         if distance < 5 then
             isFlying = false
-            RootPart.Anchored = true 
-            RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            
-            if flightConnection then 
-                flightConnection:Disconnect() 
-                flightConnection = nil 
-            end
+            RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0)
+            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             return
         end
 
+        -- ใช้ Velocity ล้วนๆ ไม่แตะ CFrame
         local velocityVector = direction.Unit * FLY_SPEED
-        RootPart.AssemblyLinearVelocity = velocityVector
-        
-        local moveStep = direction.Unit * (FLY_SPEED * dt)
-        
-        local jitter = Vector3.new(
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2
-        )
-        
-        RootPart.CFrame = RootPart.CFrame + moveStep + jitter
+        -- ผสมแรงโน้มถ่วงเข้าไปด้วย
+        RootPart.AssemblyLinearVelocity = velocityVector + gravity
     end)
 end
 
