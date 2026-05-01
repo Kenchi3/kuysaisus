@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Humanized Flight + AntiCheat",
+    SubTitle = "Humanized + AntiCheat + Timer",
     TabWidth = 160,
     Size = UDim2.fromOffset(600, 450),
     Acrylic = true, 
@@ -50,6 +50,9 @@ local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
 
+-- [ระบบ Timer]
+local missionStartTime = tick()
+
 local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
     if not unclimbable then return nil end
@@ -82,7 +85,7 @@ end
 local FLY_OFFSET = 100
 local FLY_SPEED = 200
 local JITTER_AMOUNT = 2 
-local FAKE_VELOCITY = 220 -- 🔥 [สำคัญ] เพิ่มกลับมาเพราะ executeMultiSlash ต้องใช้
+local FAKE_VELOCITY = 220
 
 local isFlying = false
 local NoclipConnection = nil
@@ -113,11 +116,10 @@ local function humanizedFlyTo(targetPos)
         local direction = (goalPos - RootPart.Position)
         local distance = direction.Magnitude
         
-        -- ถึงเป้าหมายแล้ว (เผื่อช่วง 5 studs)
         if distance < 5 then
             isFlying = false
             RootPart.Anchored = true 
-            RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0) -- หยุดนิ่งๆ
+            RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
             
             if flightConnection then 
                 flightConnection:Disconnect() 
@@ -126,7 +128,6 @@ local function humanizedFlyTo(targetPos)
             return
         end
 
-        -- คำนวณความเร็วและตำแหน่ง
         local velocityVector = direction.Unit * FLY_SPEED
         RootPart.AssemblyLinearVelocity = velocityVector
         
@@ -288,10 +289,39 @@ local function getTargetCluster(maxCount, radius)
     return limitedTargets, closestPart.Position
 end
 
--- 🔥 [คงเดิม] ไม่แก้ไข executeMultiSlash ตาม request
+local function performSimulatedClick(x, y)
+    -- ตรวจสอบว่าเมนู Esc เปิดอยู่หรือไม่
+    -- ถ้าเปิดอยู่ (IsMenuOpen = true) ให้ return ออกไปเลย ไม่ต้องรันโค้ดข้างล่าง
+    if GuiService.MenuIsOpen then 
+        return 
+    end
+
+    pcall(function()
+        -- กดคลิกซ้าย (เลข 0 คือ MouseButton1)
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        
+        task.wait(math.random(50, 150) / 1000)
+        
+        -- ปล่อยคลิก
+        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    end)
+end
+-- 🔥 [FIXED] Execute Slash with VIM Mouse Click
 local function executeMultiSlash(napesArray)
-    if #napesArray == 0 then return false end
+    if not napesArray or #napesArray == 0 then return false end
+    
     POST:FireServer("Attacks", "Slash", true)
+    
+    -- 🔥 Anti-Cheat: จำลองการกดเมาส์ (VIM)
+    if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
+        -- สุ่มตำแหน่งที่จะคลิกเล็กน้อย เพื่อไม่ให้กดซ้ำที่จุดเดิม (0,0) ตลอดเวลา
+        -- หรือถ้าต้องการคลิกที่ (0,0) ก็ใส่เลข 0 เข้าไปตรงๆ ได้เลยครับ
+        local targetX = 1400
+        local targetY = 900
+        
+        performSimulatedClick(targetX, targetY)
+    end
+    
     task.wait(0.05)
     for _, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
@@ -348,9 +378,29 @@ Tabs.Main:CreateToggle("Autofarm", {
     Default = false
 })
 
+Tabs.Main:CreateToggle("EnableAntiCheatActions", {
+    Title = "Anti-Cheat Simulation",
+    Description = "Simulates Mouse Clicks & Random Keys (Q/E)",
+    Default = true
+})
+
 Tabs.Main:CreateSlider("TargetLimit", { Title = "Target Limit", Min = 1, Max = 10, Default = 3, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 200, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
+
+Tabs.Main:CreateToggle("UseMissionTimer", {
+    Title = "Mission Time Guard",
+    Description = "Wait until time limit reached before finishing.",
+    Default = false
+})
+
+Tabs.Main:CreateInput("MinMissionTime", {
+    Title = "Min. Mission Time (Seconds)",
+    Default = "60",
+    Numeric = true,
+    Placeholder = "e.g. 120"
+})
+
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
 
@@ -369,6 +419,7 @@ spawn(function()
             RootPart = Character:WaitForChild("HumanoidRootPart")
             Humanoid = Character:WaitForChild("Humanoid")
             task.wait(2)
+            missionStartTime = tick() -- Reset timer on death
         end
 
         if not Options.Autofarm.Value then 
@@ -424,8 +475,6 @@ spawn(function()
 
         if #targets > 0 and anchorPos then
             humanizedFlyTo(anchorPos)
-            
-            -- รอจนกว่าจะบินถึง (isFlying เป็น false)
             while isFlying do task.wait(0.05) end
             
             executeMultiSlash(targets)
@@ -436,11 +485,28 @@ spawn(function()
     end
 end)
 
--- 🔥 [แก้ไข] ระบบหนีตอนโดนจับ
+-- 🔥 [FIXED] Random Q/E Presses for Anti-Cheat
+spawn(function()
+    while task.wait(math.random(5, 15)) do -- Random interval 5-15 seconds
+        if Options.Autofarm.Value and Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
+            -- Randomly pick Q or E
+            local key = (math.random(1, 2) == 1) and Enum.KeyCode.Q or Enum.KeyCode.E
+            
+            -- Simulate Press
+            pcall(function()
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
+                -- [FIX] math.random(float, float) -> math.random(int, int) / 1000
+                task.wait(math.random(100, 500) / 1000) -- 0.1 - 0.5 sec
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            end)
+        end
+    end
+end)
+
+-- 🔥 [Updated] Escape Handler
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value then
-            -- ยกเลิก Loop บินทันที
             if flightConnection then
                 flightConnection:Disconnect()
                 flightConnection = nil
@@ -458,14 +524,28 @@ if ButtonsFolder then
     end)
 end
 
--- Thread: Auto Retry & Open Chests
+-- Thread: Auto Retry & Open Chests (With Timer Logic)
 spawn(function()
     while task.wait(1) do
         if not Options.AutoRetry.Value then continue end
+        
         if isRaidMap then
             if isRaidCompleted() then
+                -- 🔥 Timer Logic
+                if Options.UseMissionTimer.Value then
+                    local elapsed = tick() - missionStartTime
+                    local required = tonumber(Options.MinMissionTime.Value) or 60
+                    
+                    if elapsed < required then
+                        local waitTime = required - elapsed
+                        Library:Notify({Title="Timer Guard", Content=string.format("Waiting %.0fs to avoid suspicion.", waitTime), Duration=waitTime})
+                        task.wait(waitTime)
+                    end
+                end
+                
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
+                missionStartTime = tick() -- Reset timer for next round
                 task.wait(3)
             end
         else
@@ -477,7 +557,20 @@ spawn(function()
                     end
                 end
             end
-            if aliveTitans == 0 then pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); task.wait(3) end
+            if aliveTitans == 0 then 
+                -- Check timer for normal maps too
+                if Options.UseMissionTimer.Value then
+                    local elapsed = tick() - missionStartTime
+                    local required = tonumber(Options.MinMissionTime.Value) or 60
+                    if elapsed < required then
+                        task.wait(required - elapsed)
+                    end
+                end
+                
+                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
+                missionStartTime = tick()
+                task.wait(3) 
+            end
         end
     end
 end)
@@ -511,5 +604,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, option in pairs(Options) do if option.OnChanged then option:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Humanized Mode Active", Duration=5})
+Library:Notify({Title="Loaded", Content="Humanized + Timer System Ready", Duration=5})
 SaveManager:LoadAutoloadConfig()
