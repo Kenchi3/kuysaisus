@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Smooth Tween + Noclip + Raid",
+    SubTitle = "Humanized Flight + AntiCheat",
     TabWidth = 160,
     Size = UDim2.fromOffset(600, 450),
     Acrylic = true, 
@@ -31,7 +31,7 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
-local TweenService = game:GetService("TweenService") -- 🔥 เพิ่ม TweenService
+local TweenService = game:GetService("TweenService")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -81,46 +81,43 @@ end
 -- ==========================================
 local FLY_OFFSET = 100
 local FLY_SPEED = 150
-local JITTER_AMOUNT = 2 -- ค่าความ "สั่น" ของมนุษย์ (ยิ่งสูงยิ่งเหมือนมือสั่น/ปรับเล็ง)
+local JITTER_AMOUNT = 2 
+local FAKE_VELOCITY = 220 -- 🔥 [สำคัญ] เพิ่มกลับมาเพราะ executeMultiSlash ต้องใช้
 
 local isFlying = false
 local NoclipConnection = nil
-local flightConnection = nil -- ใช้สำหรับ RunService loop
+local flightConnection = nil 
 
 -- [Humanized Flight Function]
--- ใช้ RunService แทน Tween เพื่อให้ควบคุมความเป็นธรรมชาติได้มากกว่า
 local function humanizedFlyTo(targetPos)
     if not RootPart then return end
-    if isFlying then return end -- กันกดซ้ำ
+    if isFlying then return end 
     
     isFlying = true
     RootPart.Anchored = false
     Humanoid.PlatformStand = true
     
-    -- ล้างความเร็วเก่าก่อน
     RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
     
     local goalPos = targetPos + Vector3.new(
-        math.random(-5, 5), -- เพิ่มความไม่แน่นอนในแกน X
-        FLY_OFFSET + math.random(-2, 2), -- เพิ่มความไม่แน่นอนในแกน Y
-        math.random(-5, 5) -- เพิ่มความไม่แน่นอนในแกน Z
+        math.random(-5, 5), 
+        FLY_OFFSET + math.random(-2, 2), 
+        math.random(-5, 5)
     )
 
-    -- ใช้ RunService Heartbeat (ทำงานทุกเฟรม)
     if flightConnection then flightConnection:Disconnect() end
     
     flightConnection = RunService.Heartbeat:Connect(function(dt)
         if not isFlying then return end
         
-        -- คำนวณทิศทาง
         local direction = (goalPos - RootPart.Position)
         local distance = direction.Magnitude
         
-        -- ถึงเป้าหมายแล้ว
+        -- ถึงเป้าหมายแล้ว (เผื่อช่วง 5 studs)
         if distance < 5 then
             isFlying = false
-            -- ตรึงตัวแบบนุ่มนวล (อาจจะไม่ Anchored เลยถ้าต้องการให้ลอยตัวตามฟิสิกส์)
             RootPart.Anchored = true 
+            RootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0) -- หยุดนิ่งๆ
             
             if flightConnection then 
                 flightConnection:Disconnect() 
@@ -129,26 +126,18 @@ local function humanizedFlyTo(targetPos)
             return
         end
 
-        -- ปลอมความเร็ว (Spoof Velocity) เพื่อหลอกเซิร์ฟเวอร์ว่าเรากำลังเคลื่อนที่จริง
+        -- คำนวณความเร็วและตำแหน่ง
         local velocityVector = direction.Unit * FLY_SPEED
-        
-        -- [Anti-Cheat Bypass Trick]
-        -- ตั้งค่า Velocity ให้ตรงกับทิศทางบิน ทำให้เซิร์ฟเวอร์เห็นว่าเราเคลื่อนที่เอง
         RootPart.AssemblyLinearVelocity = velocityVector
         
-        -- ย้ายตัว (CFrame) แต่เพิ่ม Jitter (ความสั่นไหวเล็กน้อย) เพื่อให้ดูไม่เป็นหุ่นยนต์
-        -- คำนวณตำแหน่งใหม่โดยคิดความเร็ว dt (Delta Time) คูณกับความเร็ว
         local moveStep = direction.Unit * (FLY_SPEED * dt)
         
-        -- เพิ่ม Noise (Randomness) ตอนบิน
         local jitter = Vector3.new(
             math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
             math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
             math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2
         )
         
-        -- อัพเดท CFrame (ห้ามใช้ RootPart.Position โดยตรง ให้ CFrame เพื่อรักษามุมมอง)
-        -- แต่เราจะไม่ยุ่งกับการหมุนตัว (Rotation) เพื่อให้ดูธรรมชาติ
         RootPart.CFrame = RootPart.CFrame + moveStep + jitter
     end)
 end
@@ -299,6 +288,7 @@ local function getTargetCluster(maxCount, radius)
     return limitedTargets, closestPart.Position
 end
 
+-- 🔥 [คงเดิม] ไม่แก้ไข executeMultiSlash ตาม request
 local function executeMultiSlash(napesArray)
     if #napesArray == 0 then return false end
     POST:FireServer("Attacks", "Slash", true)
@@ -353,8 +343,8 @@ end
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
 Tabs.Main:CreateToggle("Autofarm", {
-    Title = "Auto Farm (Smooth Tween)",
-    Description = "Buttery smooth flight & Auto Skip.",
+    Title = "Auto Farm (Humanized)",
+    Description = "Natural movement & Velocity Spoof.",
     Default = false
 })
 
@@ -365,14 +355,12 @@ Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Defau
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
 
 -- ==========================================
--- ==========================================
--- [ Loop หลักที่ปรับปรุงแล้ว ]
+-- [ 5. Loop หลัก ]
 -- ==========================================
 spawn(function()
     spawn(monitorRaidBosses)
     
     while task.wait(0.1) do
-        -- รีเซ็ตตัวแปรถ้าตาย
         if Humanoid.Health <= 0 then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false
@@ -384,7 +372,6 @@ spawn(function()
         end
 
         if not Options.Autofarm.Value then 
-            -- เคลียร์ทุกอย่างเมื่อปิด
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false
             Humanoid.PlatformStand = false
@@ -402,12 +389,11 @@ spawn(function()
             continue 
         end
 
-        -- [Auto Skip UI] (เหมือนเดิม)
+        -- Auto Skip UI
         local success, skipGui = pcall(function() return Player.PlayerGui.Interface.Skip end)
         if success and skipGui and skipGui.Visible then
             local interactBtn = skipGui:FindFirstChild("Interact")
             if interactBtn and interactBtn:IsA("GuiButton") then
-                -- กดปุ่มแบบมนุษย์ (ไม่ทันที)
                 task.wait(math.random(100, 300)/1000)
                 GuiService.SelectedObject = interactBtn; task.wait(0.1)
                 VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.05)
@@ -416,7 +402,7 @@ spawn(function()
             end
         end
 
-        -- [Noclip] (ทำให้ลื่นไหลกว่าเดิม)
+        -- Noclip
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
                 if Character and Options.Autofarm.Value then
@@ -431,9 +417,6 @@ spawn(function()
 
         local limit = Options.TargetLimit.Value
         local radius = Options.AoERadius.Value
-        
-        -- [Humanized Delay]
-        -- อ่านค่า Delay จาก UI แต่เพิ่มความสุ่มเข้าไป
         local baseDelay = Options.SlashDelay.Value
         local randomDelay = baseDelay + math.random(-0.1, 0.2) 
 
@@ -441,25 +424,28 @@ spawn(function()
 
         if #targets > 0 and anchorPos then
             humanizedFlyTo(anchorPos)
-            j7nu
+            
+            -- รอจนกว่าจะบินถึง (isFlying เป็น false)
             while isFlying do task.wait(0.05) end
             
             executeMultiSlash(targets)
-            task.wait(math.max(0.1, randomDelay)) -- ใช้ Delay ที่ random แล้ว
+            task.wait(math.max(0.1, randomDelay))
         else
             task.wait(0.5)
         end
     end
 end)
 
+-- 🔥 [แก้ไข] ระบบหนีตอนโดนจับ
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value then
-            -- 🔥 ยกเลิก Tween ทันทีถ้าโดนจับต้องหนี
-            if currentFlightTween then
-                currentFlightTween:Cancel()
-                currentFlightTween = nil
+            -- ยกเลิก Loop บินทันที
+            if flightConnection then
+                flightConnection:Disconnect()
+                flightConnection = nil
             end
+            isFlying = false
             
             RootPart.Anchored = false
             task.wait(0.15)
@@ -525,5 +511,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, option in pairs(Options) do if option.OnChanged then option:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Smooth Tween Ready 🔥", Duration=5})
+Library:Notify({Title="Loaded", Content="Humanized Mode Active", Duration=5})
 SaveManager:LoadAutoloadConfig()
