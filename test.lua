@@ -550,6 +550,7 @@ spawn(function()
                         continue
                     end
 
+                    performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                     executeOPSlash(limitedTargets) 
                 end
             end
