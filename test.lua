@@ -6,8 +6,8 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "Titan Hub",
-    SubTitle = "Humanized + OP Farm + Anti-Cheat Ascent",
+    Title = "Klakuylek Hub",
+    SubTitle = "By nxnn_nn",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -694,5 +694,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Smooth Ascent Enabled!", Duration=5})
+Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
 SaveManager:LoadAutoloadConfig()
