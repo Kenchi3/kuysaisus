@@ -308,11 +308,7 @@ local function executeMultiSlash(napesArray)
 
     POST:FireServer("Attacks", "Slash", true)
     if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
-        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, true, game, 0) 
-        task.wait(math.random(50, 100) / 1000)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
-        task.wait(math.random(50, 150) / 1000)
-        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, false, game, 0)
     end
     
     task.wait(0.05)
@@ -664,7 +660,7 @@ SaveManager:SetFolder("NonnyHub/game")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
-local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.PlaceId) end
+local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.GameId) end
 task.spawn(function()
     local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"
     if isfile(f) then local s = SaveManager:Load(n); if s then Library:Notify({ Title = "Config", Content = "Auto-loaded", Duration = 3 }) end end
