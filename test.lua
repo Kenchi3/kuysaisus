@@ -380,37 +380,42 @@ end
 -- ==========================================
 Tabs.Main:CreateToggle("OPFarm", {
     Title = "OP Farm (Sky Nuke)",
-    Description = "Smoothly ascend to sky & nuke titans.",
+    Description = "Risky!!",
     Default = false
 })
 
 Tabs.Main:CreateToggle("BossBurst", {
-    Title = "Raid Boss Burst (Priority)",
-    Description = "Focus ONLY on Raid Boss if available (Ignores normal titans).",
+    Title = "Raid Boss Burst",
+    Description = "Risky!!",
     Default = false
 })
 
 Tabs.Main:CreateSlider("BurstAmount", {
     Title = "Burst Hits Amount",
-    Min = 1, Max = 20, Default = 5, Rounding = 0
+    Min = 1, Max = 5, Default = 5, Rounding = 0
 })
 
+
 Tabs.Main:CreateSlider("OPFarmDelay", { Title = "OP Farm Delay (Sec)", Min = 0.05, Max = 1.0, Default = 0.6, Rounding = 1 })
-Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Humanized)", Description = "Smooth CFrame Fly & AoE Slash multiple titans.", Default = false })
-Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "For Humanized Farm only.", Default = true })
-Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
+
+Tabs.Main:CreateSection("Auto Farm (Safe)")
+Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Description = "", Default = false })
+Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
+Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Description = "Recommended 3-5", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
+Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Mission Time Guard", 
-    Description = "Pause wiping if it ends the round too early.", 
+    Description = "pause Auto Farm until the set time", 
     Default = false 
 })
 
 Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
+Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
-Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
+Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 
 -- ==========================================
 -- [ 5. Loop หลัก ]
