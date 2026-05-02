@@ -328,7 +328,7 @@ local function executeOPSlash(napesArray)
     for _, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, 9999, math.random(10, 100)) end)
+                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
     end
@@ -341,7 +341,7 @@ local function executeBossBurst(bossPart, burstAmount)
         task.spawn(function()
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
             task.wait(math.random(1, 5) / 1000)
-            pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, 9999, math.random(10, 100)) end)
+            pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         end)
     end
     return true
