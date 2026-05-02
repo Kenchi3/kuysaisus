@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Humanized + OP Farm + Smart Time Guard",
+    SubTitle = "Humanized + OP Farm + Anti-Cheat Ascent",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -380,7 +380,7 @@ end
 -- ==========================================
 Tabs.Main:CreateToggle("OPFarm", {
     Title = "OP Farm (Sky Nuke)",
-    Description = "Lock in sky & nuke 5 titans per slash.",
+    Description = "Smoothly ascend to sky & nuke titans.",
     Default = false
 })
 
@@ -491,9 +491,29 @@ spawn(function()
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
+            -- 🔥 [ส่วนของการขึ้นฟ้าแบบนุ่มนวล]
             if not opFarmInitialized then
-                RootPart.CFrame = CFrame.new(RootPart.Position.X, OP_FLY_HEIGHT, RootPart.Position.Z)
-                RootPart.Anchored = true; RootPart.AssemblyLinearVelocity = Vector3.zero; opFarmInitialized = true
+                -- ตรวจสอบว่าอยู่สูงกว่าเป้าหมายแล้วหรือยัง
+                if RootPart.Position.Y < (OP_FLY_HEIGHT - 10) then
+                    Humanoid.PlatformStand = true
+                    RootPart.Anchored = true -- ล็อคตัวไว้ก่อนเพื่อกันตก
+                    
+                    local targetPos = CFrame.new(RootPart.Position.X, OP_FLY_HEIGHT, RootPart.Position.Z)
+                    -- คำนวณระยะทางและเวลา (ความเร็วประมาณ 100-150 studs/วินาที)
+                    local distance = math.abs(OP_FLY_HEIGHT - RootPart.Position.Y)
+                    local duration = math.clamp(distance / 150, 1, 5) -- ใช้เวลาอย่างน้อย 1 วินาที, มากสุด 5 วินาที_air
+                    
+                    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+                    local tween = TweenService:Create(RootPart, tweenInfo, {CFrame = targetPos})
+                    
+                    tween:Play()
+                    -- รอให้ลอยขึ้นจนเสร็จ (ไม่ทำอย่างอื่นจนกว่าจะถึงจุด)
+                    tween.Completed:Wait()
+                end
+                
+                RootPart.Anchored = true -- ล็อคตัวไว้บนอากาศ
+                RootPart.AssemblyLinearVelocity = Vector3.zero
+                opFarmInitialized = true
             end
             
             if isBladeEmpty() then 
@@ -522,10 +542,7 @@ spawn(function()
                     local elapsed = tick() - missionStartTime
                     local minTime = tonumber(Options.MinMissionTime.Value) or 60
 
-                    -- ถ้าจำนวนเป้าหมายที่จะฟัน (limitedTargets) มากกว่าหรือเท่ากับ Titan ที่มีชีวิตทั้งหมด
-                    -- แปลว่า "ฟันครั้งนี้จะเคลียร์แมพ"
                     if Options.UseMissionTimer.Value and (#limitedTargets >= aliveCount) and (elapsed < minTime) then
-                        -- ยังไม่ฟัน รอเวลา
                         task.wait(1)
                         continue
                     end
@@ -572,12 +589,10 @@ spawn(function()
                     local elapsed = tick() - missionStartTime
                     local minTime = tonumber(Options.MinMissionTime.Value) or 60
 
-                    -- ตรวจสอบว่าจะเคลียร์แมพหรือไม่
                     if Options.UseMissionTimer.Value and (#targets >= aliveCount) and (elapsed < minTime) then
-                        -- บินไปหาไว้ก่อน แต่ไม่ฟัน
                         humanizedFlyTo(anchorPos)
                         while isFlying do task.wait(0.05) end
-                        task.wait(1) -- รอเวลา
+                        task.wait(1)
                         continue
                     end
 
@@ -676,5 +691,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Smart Time Guard Enabled!", Duration=5})
+Library:Notify({Title="Loaded", Content="Smooth Ascent Enabled!", Duration=5})
 SaveManager:LoadAutoloadConfig()
