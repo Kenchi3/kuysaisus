@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Humanized + OP Farm + Time Guard",
+    SubTitle = "Humanized + OP Farm + Smart Time Guard",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -54,7 +54,6 @@ local opFarmInitialized = false
 local OP_FLY_HEIGHT = 500
 local OP_MAX_TARGETS = 5
 
--- ตัวแปรสำหรับระบบกันตก (Anti-Gravity Hover)
 local antiGravityConn = nil
 local savedHoverY = nil
 
@@ -93,7 +92,6 @@ local isFlying = false
 local NoclipConnection = nil
 local flightConnection = nil 
 
--- 🔥 [Smooth CFrame Flight]
 local function humanizedFlyTo(targetPos)
     if not RootPart or isFlying then return end 
     isFlying = true
@@ -162,7 +160,6 @@ local function isBladeEmpty()
     return false
 end
 
--- 🔥 [ระบบ Refill แบบปลอดภัย]
 local lastRefillAttempt = 0
 local REFILL_COOLDOWN = 2.5 
 
@@ -214,7 +211,6 @@ local function getAvailableBossWeakPoint()
     return nil
 end
 
--- 🔥 [ฟังก์ชันนับ Titan ที่ยังมีชีวิต]
 local function getAliveTitanCount()
     local count = 0
     if not TitansFolder then return 0 end
@@ -308,7 +304,11 @@ local function executeMultiSlash(napesArray)
 
     POST:FireServer("Attacks", "Slash", true)
     if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
+        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, true, game, 0) 
+        task.wait(math.random(50, 100) / 1000)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
+        task.wait(math.random(50, 150) / 1000)
+        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, false, game, 0)
     end
     
     task.wait(0.05)
@@ -328,7 +328,7 @@ local function executeOPSlash(napesArray)
     for _, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
+                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, 9999, math.random(10, 100)) end)
             end)
         end
     end
@@ -341,7 +341,7 @@ local function executeBossBurst(bossPart, burstAmount)
         task.spawn(function()
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
             task.wait(math.random(1, 5) / 1000)
-            pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
+            pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, 9999, math.random(10, 100)) end)
         end)
     end
     return true
@@ -402,10 +402,9 @@ Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
--- 🔥 [แก้ไข Description ของ Time Guard]
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Mission Time Guard", 
-    Description = "Pause killing last Titan until time limit reached.", 
+    Description = "Pause wiping if it ends the round too early.", 
     Default = false 
 })
 
@@ -448,7 +447,6 @@ spawn(function()
             continue 
         end
 
-        -- ระบบ Anti-Gravity กันตก
         if not antiGravityConn then
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
@@ -482,22 +480,6 @@ spawn(function()
                     end
                 end
             end)
-        end
-
-        -- 🔥 [Time Guard Logic: หยุดฆ่าถ้าเหลือตัวสุดท้ายแต่เวลายังไม่ถึง]
-        if Options.UseMissionTimer.Value then
-            local elapsed = tick() - missionStartTime
-            local minTime = tonumber(Options.MinMissionTime.Value) or 60
-            local aliveCount = getAliveTitanCount()
-            
-            -- ถ้าเวลายังไม่ครบ และเหลือ Titan น้อยกว่าหรือเท่ากับ 1 (กันการจบเกม)
-            if elapsed < minTime and aliveCount <= 1 then
-                -- แสดง Notification แจ้งเตือนว่ากำลังรอเวลา (Optional แต่ดีต่อผู้ใช้)
-                -- Library:Notify({Title="Time Guard", Content="Waiting for time limit...", Duration=1}) -- อาจจะรำคาญถี่ไป ให้แสดงทุก 5 วิแทน
-                
-                task.wait(1) -- รอ 1 วินาที แล้ววนลูปใหม่โดยไม่ทำอะไร
-                continue -- ข้ามการโจมตีในรอบนี้
-            end
         end
 
         local currentBossTarget = getAvailableBossWeakPoint()
@@ -534,7 +516,20 @@ spawn(function()
                 local limitedTargets = {}
                 for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
 
+                -- 🔥 [Smart Time Guard Logic]
                 if #limitedTargets > 0 then
+                    local aliveCount = getAliveTitanCount()
+                    local elapsed = tick() - missionStartTime
+                    local minTime = tonumber(Options.MinMissionTime.Value) or 60
+
+                    -- ถ้าจำนวนเป้าหมายที่จะฟัน (limitedTargets) มากกว่าหรือเท่ากับ Titan ที่มีชีวิตทั้งหมด
+                    -- แปลว่า "ฟันครั้งนี้จะเคลียร์แมพ"
+                    if Options.UseMissionTimer.Value and (#limitedTargets >= aliveCount) and (elapsed < minTime) then
+                        -- ยังไม่ฟัน รอเวลา
+                        task.wait(1)
+                        continue
+                    end
+
                     executeOPSlash(limitedTargets) 
                 end
             end
@@ -572,6 +567,20 @@ spawn(function()
                 local targets, anchorPos = getTargetCluster(limit, radius)
 
                 if #targets > 0 and anchorPos then
+                    -- 🔥 [Smart Time Guard Logic]
+                    local aliveCount = getAliveTitanCount()
+                    local elapsed = tick() - missionStartTime
+                    local minTime = tonumber(Options.MinMissionTime.Value) or 60
+
+                    -- ตรวจสอบว่าจะเคลียร์แมพหรือไม่
+                    if Options.UseMissionTimer.Value and (#targets >= aliveCount) and (elapsed < minTime) then
+                        -- บินไปหาไว้ก่อน แต่ไม่ฟัน
+                        humanizedFlyTo(anchorPos)
+                        while isFlying do task.wait(0.05) end
+                        task.wait(1) -- รอเวลา
+                        continue
+                    end
+
                     humanizedFlyTo(anchorPos)
                     while isFlying do task.wait(0.05) end
                     
@@ -632,7 +641,6 @@ spawn(function()
         if not Options.AutoRetry.Value then continue end
         if isRaidMap then
             if isRaidCompleted() then
-                -- 🔥 [ลบการรอเวลาออกจากตรงนี้ เพราะหน่วงไว้ตอนฆ่าตัวสุดท้ายแล้ว]
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 missionStartTime = tick(); task.wait(3)
@@ -641,7 +649,6 @@ spawn(function()
             local a = 0
             if TitansFolder then for _, t in ipairs(TitansFolder:GetChildren()) do if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then a = a + 1 end end end
             if a == 0 then 
-                -- 🔥 [ลบการรอเวลาออกจากตรงนี้ เพราะหน่วงไว้ตอนฆ่าตัวสุดท้ายแล้ว]
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); missionStartTime = tick(); task.wait(3) 
             end
         end
@@ -660,7 +667,7 @@ SaveManager:SetFolder("NonnyHub/game")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
-local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.GameId) end
+local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.PlaceId) end
 task.spawn(function()
     local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"
     if isfile(f) then local s = SaveManager:Load(n); if s then Library:Notify({ Title = "Config", Content = "Auto-loaded", Duration = 3 }) end end
@@ -669,5 +676,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Time Guard Logic Updated!", Duration=5})
+Library:Notify({Title="Loaded", Content="Smart Time Guard Enabled!", Duration=5})
 SaveManager:LoadAutoloadConfig()
