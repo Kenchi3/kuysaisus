@@ -395,7 +395,7 @@ Tabs.Main:CreateSlider("BurstAmount", {
     Min = 1, Max = 20, Default = 5, Rounding = 0
 })
 
-Tabs.Main:CreateSlider("OPFarmDelay", { Title = "OP Farm Delay (Sec)", Min = 0.05, Max = 1.0, Default = 0.2, Rounding = 1 })
+Tabs.Main:CreateSlider("OPFarmDelay", { Title = "OP Farm Delay (Sec)", Min = 0.05, Max = 1.0, Default = 0.6, Rounding = 1 })
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Humanized)", Description = "Smooth CFrame Fly & AoE Slash multiple titans.", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "For Humanized Farm only.", Default = true })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
@@ -667,7 +667,7 @@ SaveManager:SetFolder("NonnyHub/game")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
-local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.PlaceId) end
+local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.GameId) end
 task.spawn(function()
     local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"
     if isfile(f) then local s = SaveManager:Load(n); if s then Library:Notify({ Title = "Config", Content = "Auto-loaded", Duration = 3 }) end end
