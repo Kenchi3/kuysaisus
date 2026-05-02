@@ -304,11 +304,8 @@ local function executeMultiSlash(napesArray)
 
     POST:FireServer("Attacks", "Slash", true)
     if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
-        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, true, game, 0) 
         task.wait(math.random(50, 100) / 1000)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
-        task.wait(math.random(50, 150) / 1000)
-        VirtualInputManager:SendMouseButtonEvent(1400, 900, 1, false, game, 0)
     end
     
     task.wait(0.05)
@@ -535,6 +532,7 @@ spawn(function()
             end
 
             if currentBossTarget then
+                performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
                 local allTargets = getAllTargets()
