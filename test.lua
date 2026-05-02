@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Titan Hub",
-    SubTitle = "Humanized + OP Farm + Boss Priority",
+    SubTitle = "Humanized + OP Farm + Time Guard",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -162,9 +162,9 @@ local function isBladeEmpty()
     return false
 end
 
--- 🔥 [ระบบ Refill แบบปลอดภัย] ป้องกันการยิง Remote ซ้ำเร็วจนโดนแบน
+-- 🔥 [ระบบ Refill แบบปลอดภัย]
 local lastRefillAttempt = 0
-local REFILL_COOLDOWN = 2.5 -- หน่วงเวลา 2.5 วินาทีระหว่างกด Refill
+local REFILL_COOLDOWN = 2.5 
 
 local function safeRefillBlades()
     if tick() - lastRefillAttempt < REFILL_COOLDOWN then return end
@@ -212,6 +212,21 @@ local function getAvailableBossWeakPoint()
         end
     end
     return nil
+end
+
+-- 🔥 [ฟังก์ชันนับ Titan ที่ยังมีชีวิต]
+local function getAliveTitanCount()
+    local count = 0
+    if not TitansFolder then return 0 end
+    for _, titan in ipairs(TitansFolder:GetChildren()) do
+        if titan:IsA("Model") then
+            local hum = titan:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                count = count + 1
+            end
+        end
+    end
+    return count
 end
 
 local function getTargetCluster(maxCount, radius)
@@ -390,7 +405,14 @@ Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulatio
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
-Tabs.Main:CreateToggle("UseMissionTimer", { Title = "Mission Time Guard", Description = "Wait until time limit reached before finishing.", Default = false })
+
+-- 🔥 [แก้ไข Description ของ Time Guard]
+Tabs.Main:CreateToggle("UseMissionTimer", { 
+    Title = "Mission Time Guard", 
+    Description = "Pause killing last Titan until time limit reached.", 
+    Default = false 
+})
+
 Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = false })
@@ -435,7 +457,6 @@ spawn(function()
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
                     RootPart.AssemblyLinearVelocity = Vector3.zero
-                    -- ล็อคความสูงถ้ากำลังลอยรอ Refill อยู่ (และไม่ได้กำลังบินตาม Humanized)
                     if savedHoverY and not isFlying then
                         RootPart.CFrame = CFrame.new(RootPart.CFrame.X, savedHoverY, RootPart.CFrame.Z)
                     end
@@ -467,7 +488,22 @@ spawn(function()
             end)
         end
 
-        -- ตรวจสอบบอสก่อน
+        -- 🔥 [Time Guard Logic: หยุดฆ่าถ้าเหลือตัวสุดท้ายแต่เวลายังไม่ถึง]
+        if Options.UseMissionTimer.Value then
+            local elapsed = tick() - missionStartTime
+            local minTime = tonumber(Options.MinMissionTime.Value) or 60
+            local aliveCount = getAliveTitanCount()
+            
+            -- ถ้าเวลายังไม่ครบ และเหลือ Titan น้อยกว่าหรือเท่ากับ 1 (กันการจบเกม)
+            if elapsed < minTime and aliveCount <= 1 then
+                -- แสดง Notification แจ้งเตือนว่ากำลังรอเวลา (Optional แต่ดีต่อผู้ใช้)
+                -- Library:Notify({Title="Time Guard", Content="Waiting for time limit...", Duration=1}) -- อาจจะรำคาญถี่ไป ให้แสดงทุก 5 วิแทน
+                
+                task.wait(1) -- รอ 1 วินาที แล้ววนลูปใหม่โดยไม่ทำอะไร
+                continue -- ข้ามการโจมตีในรอบนี้
+            end
+        end
+
         local currentBossTarget = getAvailableBossWeakPoint()
 
         -- ==========================================
@@ -482,23 +518,19 @@ spawn(function()
                 RootPart.Anchored = true; RootPart.AssemblyLinearVelocity = Vector3.zero; opFarmInitialized = true
             end
             
-            -- ระบบ Refill ปลอดภัย (ไม่ Spam Remote)
             if isBladeEmpty() then 
                 if not savedHoverY then savedHoverY = RootPart.CFrame.Y end
                 RootPart.Anchored = false 
-                
-                safeRefillBlades() -- ยิง Remote ตาม Cooldown เท่านั้น
-                task.wait(1) -- รอนานขึ้นระหว่างรอดาบเต็ม
+                safeRefillBlades() 
+                task.wait(1) 
                 continue 
             end
 
-            -- ถ้าดาบเต็มแล้วให้คืนสถานะบิน
             if savedHoverY then 
                 RootPart.Anchored = true
                 savedHoverY = nil 
             end
 
-            -- โฟกัสฟันบอสอย่างเดียวถ้ามี
             if currentBossTarget then
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
@@ -521,17 +553,15 @@ spawn(function()
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
             
-            -- ระบบ Refill ปลอดภัย (ไม่ Spam Remote)
             if isBladeEmpty() then 
-                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end -- ลอยค้างกลางอากาศ
+                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end 
                 safeRefillBlades()
                 task.wait(1)
                 continue
             end
             
-            if savedHoverY then savedHoverY = nil end -- เคลียร์การลอยค้างเมื่อดาบเต็ม
+            if savedHoverY then savedHoverY = nil end 
             
-            -- โฟกัสฟันบอสอย่างเดียวถ้ามี
             if currentBossTarget then
                 humanizedFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
@@ -606,10 +636,7 @@ spawn(function()
         if not Options.AutoRetry.Value then continue end
         if isRaidMap then
             if isRaidCompleted() then
-                if Options.UseMissionTimer.Value then
-                    local e, r = tick() - missionStartTime, tonumber(Options.MinMissionTime.Value) or 60
-                    if e < r then local w = r - e; Library:Notify({Title="Timer Guard", Content=string.format("Waiting %.0fs", w), Duration=w}); task.wait(w) end
-                end
+                -- 🔥 [ลบการรอเวลาออกจากตรงนี้ เพราะหน่วงไว้ตอนฆ่าตัวสุดท้ายแล้ว]
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 missionStartTime = tick(); task.wait(3)
@@ -618,7 +645,7 @@ spawn(function()
             local a = 0
             if TitansFolder then for _, t in ipairs(TitansFolder:GetChildren()) do if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then a = a + 1 end end end
             if a == 0 then 
-                if Options.UseMissionTimer.Value then local e, r = tick() - missionStartTime, tonumber(Options.MinMissionTime.Value) or 60; if e < r then task.wait(r - e) end end
+                -- 🔥 [ลบการรอเวลาออกจากตรงนี้ เพราะหน่วงไว้ตอนฆ่าตัวสุดท้ายแล้ว]
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); missionStartTime = tick(); task.wait(3) 
             end
         end
@@ -646,5 +673,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Safe Refill & Boss Priority Enabled!", Duration=5})
+Library:Notify({Title="Loaded", Content="Time Guard Logic Updated!", Duration=5})
 SaveManager:LoadAutoloadConfig()
