@@ -9,10 +9,10 @@ local Window = Library:CreateWindow{
     Title = "Titan Hub",
     SubTitle = "Humanized + OP Farm + Boss Priority",
     TabWidth = 160,
-    Size = UDim2.fromOffset(600, 450),
+    Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
     Theme = "Dark",
-    MinimizeKey = Enum.KeyCode.LeftControl
+    MinimizeKey = Enum.KeyCode.RightShift
 }
 
 local Tabs = {
@@ -153,10 +153,6 @@ local function hasSpareBlades()
     return false
 end
 
-local function normal_reload() pcall(function() GET:InvokeServer("Blades", "Reload") end); task.wait(0.5) end
-local function fullreload() local s = findNearestStation(); if s then pcall(function() POST:FireServer("Attacks", "Reload", s) end) end; task.wait(0.5) end
-local function refillBlades() if hasSpareBlades() then normal_reload() else fullreload() end end
-
 local function isBladeEmpty()
     local rig = Character:FindFirstChild("Rig_" .. Player.Name)
     if rig and rig:FindFirstChild("LeftHand") then
@@ -164,6 +160,24 @@ local function isBladeEmpty()
         if not blade or blade.Transparency == 1 then return true end
     end
     return false
+end
+
+-- 🔥 [ระบบ Refill แบบปลอดภัย] ป้องกันการยิง Remote ซ้ำเร็วจนโดนแบน
+local lastRefillAttempt = 0
+local REFILL_COOLDOWN = 2.5 -- หน่วงเวลา 2.5 วินาทีระหว่างกด Refill
+
+local function safeRefillBlades()
+    if tick() - lastRefillAttempt < REFILL_COOLDOWN then return end
+    lastRefillAttempt = tick()
+    
+    if hasSpareBlades() then 
+        pcall(function() GET:InvokeServer("Blades", "Reload") end)
+    else 
+        local s = findNearestStation()
+        if s then 
+            pcall(function() POST:FireServer("Attacks", "Reload", s) end) 
+        end 
+    end
 end
 
 local function trackBossWeakPoint(bossModel)
@@ -188,14 +202,13 @@ local function monitorRaidBosses()
     end)
 end
 
--- 🔥 [ฟังก์ชันตรวจจับบอสแบบ Priority] ถ้ามีบอสและเปิดโหมด Burst ไว้ จะส่งจุดอ่อนบอสออกมาเลย
 local function getAvailableBossWeakPoint()
     if not Options.BossBurst.Value then return nil end
     for bossName, weakPoint in pairs(RaidBossWeakPoints) do
         if weakPoint and weakPoint:IsA("BasePart") and weakPoint.Parent then
             return weakPoint
         else
-            RaidBossWeakPoints[bossName] = nil -- เคลียร์ข้อมูลถ้าบอสตายหรือ Part หาย
+            RaidBossWeakPoints[bossName] = nil
         end
     end
     return nil
@@ -422,7 +435,8 @@ spawn(function()
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
                     RootPart.AssemblyLinearVelocity = Vector3.zero
-                    if savedHoverY then
+                    -- ล็อคความสูงถ้ากำลังลอยรอ Refill อยู่ (และไม่ได้กำลังบินตาม Humanized)
+                    if savedHoverY and not isFlying then
                         RootPart.CFrame = CFrame.new(RootPart.CFrame.X, savedHoverY, RootPart.CFrame.Z)
                     end
                 end
@@ -453,7 +467,7 @@ spawn(function()
             end)
         end
 
-        -- ตรวจสอบก่อนว่ามีบอสอยู่ไหม (Priority Check)
+        -- ตรวจสอบบอสก่อน
         local currentBossTarget = getAvailableBossWeakPoint()
 
         -- ==========================================
@@ -468,15 +482,18 @@ spawn(function()
                 RootPart.Anchored = true; RootPart.AssemblyLinearVelocity = Vector3.zero; opFarmInitialized = true
             end
             
+            -- ระบบ Refill ปลอดภัย (ไม่ Spam Remote)
             if isBladeEmpty() then 
-                savedHoverY = RootPart.CFrame.Y
+                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end
                 RootPart.Anchored = false 
                 
-                while isBladeEmpty() do
-                    refillBlades()
-                    task.wait(0.5)
-                end
-                
+                safeRefillBlades() -- ยิง Remote ตาม Cooldown เท่านั้น
+                task.wait(1) -- รอนานขึ้นระหว่างรอดาบเต็ม
+                continue 
+            end
+
+            -- ถ้าดาบเต็มแล้วให้คืนสถานะบิน
+            if savedHoverY then 
                 RootPart.Anchored = true
                 savedHoverY = nil 
             end
@@ -504,12 +521,15 @@ spawn(function()
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
             
+            -- ระบบ Refill ปลอดภัย (ไม่ Spam Remote)
             if isBladeEmpty() then 
-                while isBladeEmpty() do
-                    refillBlades()
-                    task.wait(0.5)
-                end
+                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end -- ลอยค้างกลางอากาศ
+                safeRefillBlades()
+                task.wait(1)
+                continue
             end
+            
+            if savedHoverY then savedHoverY = nil end -- เคลียร์การลอยค้างเมื่อดาบเต็ม
             
             -- โฟกัสฟันบอสอย่างเดียวถ้ามี
             if currentBossTarget then
@@ -626,5 +646,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Boss Priority & Anti-Gravity Enabled!", Duration=5})
+Library:Notify({Title="Loaded", Content="Safe Refill & Boss Priority Enabled!", Duration=5})
 SaveManager:LoadAutoloadConfig()
