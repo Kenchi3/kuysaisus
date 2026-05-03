@@ -48,7 +48,9 @@ local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
 
-local missionStartTime = tick()
+-- 🔥 [แก้ไข] เปลี่ยนระบบนับเวลา
+local missionStartTime = nil -- เริ่มต้นเป็น nil ก่อน
+local timerStarted = false   -- Flag สำหรับเช็คว่าเริ่มนับแล้วหรือยัง
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 500
@@ -405,7 +407,7 @@ Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2
 Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Mission Time Guard", 
-    Description = "pause Auto Farm until the set time", 
+    Description = "Starts counting on first hit. Pause if finishing too early.", 
     Default = false 
 })
 
@@ -421,21 +423,31 @@ spawn(function()
     spawn(monitorRaidBosses)
     
     while task.wait(0.1) do
+        -- 🔥 [Reset Logic เมื่อตาย]
         if Humanoid.Health <= 0 then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil
             
+            -- Reset Timer
+            timerStarted = false
+            missionStartTime = nil
+            
             Character = Player.Character or Player.CharacterAdded:Wait()
             RootPart = Character:WaitForChild("HumanoidRootPart")
             Humanoid = Character:WaitForChild("Humanoid")
-            task.wait(2); missionStartTime = tick()
+            task.wait(2)
+            continue
         end
 
         if not Options.Autofarm.Value and not Options.OPFarm.Value then 
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false
+            
+            -- Reset Timer เมื่อปิด Farm
+            timerStarted = false
+            missionStartTime = nil
             
             if NoclipConnection then
                 NoclipConnection:Disconnect()
@@ -481,7 +493,7 @@ spawn(function()
                         end
                     end
                 end
-            end)
+            end])
         end
 
         local currentBossTarget = getAvailableBossWeakPoint()
@@ -493,27 +505,23 @@ spawn(function()
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
-            -- 🔥 [ส่วนของการขึ้นฟ้าแบบนุ่มนวล]
             if not opFarmInitialized then
-                -- ตรวจสอบว่าอยู่สูงกว่าเป้าหมายแล้วหรือยัง
                 if RootPart.Position.Y < (OP_FLY_HEIGHT - 10) then
                     Humanoid.PlatformStand = true
-                    RootPart.Anchored = true -- ล็อคตัวไว้ก่อนเพื่อกันตก
+                    RootPart.Anchored = true 
                     
                     local targetPos = CFrame.new(RootPart.Position.X, OP_FLY_HEIGHT, RootPart.Position.Z)
-                    -- คำนวณระยะทางและเวลา (ความเร็วประมาณ 100-150 studs/วินาที)
                     local distance = math.abs(OP_FLY_HEIGHT - RootPart.Position.Y)
-                    local duration = math.clamp(distance / 150, 1, 5) -- ใช้เวลาอย่างน้อย 1 วินาที, มากสุด 5 วินาที_air
+                    local duration = math.clamp(distance / 150, 1, 5)
                     
                     local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
                     local tween = TweenService:Create(RootPart, tweenInfo, {CFrame = targetPos})
                     
                     tween:Play()
-                    -- รอให้ลอยขึ้นจนเสร็จ (ไม่ทำอย่างอื่นจนกว่าจะถึงจุด)
                     tween.Completed:Wait()
                 end
                 
-                RootPart.Anchored = true -- ล็อคตัวไว้บนอากาศ
+                RootPart.Anchored = true
                 RootPart.AssemblyLinearVelocity = Vector3.zero
                 opFarmInitialized = true
             end
@@ -532,6 +540,11 @@ spawn(function()
             end
 
             if currentBossTarget then
+                -- 🔥 [Start Timer on First Action]
+                if not timerStarted then
+                    missionStartTime = tick()
+                    timerStarted = true
+                end
                 performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
@@ -539,8 +552,13 @@ spawn(function()
                 local limitedTargets = {}
                 for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
 
-                -- 🔥 [Smart Time Guard Logic]
                 if #limitedTargets > 0 then
+                    -- 🔥 [Start Timer on First Action]
+                    if not timerStarted then
+                        missionStartTime = tick()
+                        timerStarted = true
+                    end
+
                     local aliveCount = getAliveTitanCount()
                     local elapsed = tick() - missionStartTime
                     local minTime = tonumber(Options.MinMissionTime.Value) or 60
@@ -575,6 +593,11 @@ spawn(function()
             if savedHoverY then savedHoverY = nil end 
             
             if currentBossTarget then
+                -- 🔥 [Start Timer on First Action]
+                if not timerStarted then
+                    missionStartTime = tick()
+                    timerStarted = true
+                end
                 humanizedFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
                 
@@ -588,7 +611,12 @@ spawn(function()
                 local targets, anchorPos = getTargetCluster(limit, radius)
 
                 if #targets > 0 and anchorPos then
-                    -- 🔥 [Smart Time Guard Logic]
+                    -- 🔥 [Start Timer on First Action]
+                    if not timerStarted then
+                        missionStartTime = tick()
+                        timerStarted = true
+                    end
+
                     local aliveCount = getAliveTitanCount()
                     local elapsed = tick() - missionStartTime
                     local minTime = tonumber(Options.MinMissionTime.Value) or 60
@@ -662,13 +690,20 @@ spawn(function()
             if isRaidCompleted() then
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                missionStartTime = tick(); task.wait(3)
+                -- 🔥 [Reset Timer on Retry]
+                timerStarted = false
+                missionStartTime = nil
+                task.wait(3)
             end
         else
             local a = 0
             if TitansFolder then for _, t in ipairs(TitansFolder:GetChildren()) do if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then a = a + 1 end end end
             if a == 0 then 
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); missionStartTime = tick(); task.wait(3) 
+                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
+                -- 🔥 [Reset Timer on Retry]
+                timerStarted = false
+                missionStartTime = nil
+                task.wait(3) 
             end
         end
     end
