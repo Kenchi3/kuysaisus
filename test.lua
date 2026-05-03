@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "By nxnn_nn",
+    SubTitle = "By nxnn_nn V1.2",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -411,7 +411,14 @@ Tabs.Main:CreateToggle("UseMissionTimer", {
     Default = false 
 })
 
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "40", Numeric = true, Placeholder = "e.g. 120", Finished = false, })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
+
+-- 🔥 [สร้าง Paragraph สำหรับแสดงเวลา]
+local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
+    Title = "Timer Status",
+    Content = "Status: Idle"
+})
+
 Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
@@ -635,6 +642,31 @@ spawn(function()
                     task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
             end
+        end
+    end
+end)
+
+-- 🔥 [Loop อัปเดตหน้าจอเวลา]
+spawn(function()
+    while task.wait(0.1) do
+        if Options.UseMissionTimer.Value then
+            if timerStarted and missionStartTime then
+                local elapsed = tick() - missionStartTime
+                local target = tonumber(Options.MinMissionTime.Value) or 60
+                local remaining = target - elapsed
+                local status = ""
+                
+                if remaining > 0 then
+                    status = string.format("Elapsed: %.1fs\nRemaining: %.1fs", elapsed, remaining)
+                else
+                    status = string.format("Time's up! (Elapsed: %.1fs)", elapsed)
+                end
+                TimerDisplay:SetContent(status)
+            else
+                TimerDisplay:SetContent("Status: Waiting for first hit...")
+            end
+        else
+            TimerDisplay:SetContent("Status: Disabled")
         end
     end
 end)
