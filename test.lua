@@ -411,7 +411,7 @@ Tabs.Main:CreateToggle("UseMissionTimer", {
     Default = false 
 })
 
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "40", Numeric = true, Placeholder = "e.g. 120", Finished = false, })
 Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
@@ -493,7 +493,7 @@ spawn(function()
                         end
                     end
                 end
-            end])
+            end)
         end
 
         local currentBossTarget = getAvailableBossWeakPoint()
