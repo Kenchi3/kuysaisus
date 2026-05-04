@@ -377,8 +377,8 @@ local function isRaidCompleted()
     return false
 end
 
--- 🔥 [Auto Join Boosted Mission Function - FIXED]
 local function joinBoostedMission()
+    local MissionCreated = false
     local boostedMap = Workspace:GetAttribute("Boosted_Map")
     if not boostedMap then
         Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3})
@@ -393,7 +393,6 @@ local function joinBoostedMission()
 
     Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
 
-    -- เรียงลำดับความยากจากมากไปน้อย
     local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
 
     for _, diff in ipairs(difficulties) do
@@ -404,21 +403,28 @@ local function joinBoostedMission()
             Objective = "Skirmish"
         }
 
-        -- ใช้ task.spawn เพื่อยิง Remote แบบไม่ต้องรอผลลัพธ์ (Async)
-        -- ทำให้ Loop วิ่งไป Difficulty ถัดไปได้เลยโดยไม่หยุดรอ
-        task.spawn(function()
-            -- ยิง Create
-            GET:InvokeServer("S_Missions", "Create", mapData)
-            
-            -- ยิง Start ทันทีหลัง Create (โดยไม่เช็คว่า Create สำเร็จไหม)
-            GET:InvokeServer("S_Missions", "Start")
+        local success, result = pcall(function()
+            return GET:InvokeServer("S_Missions", "Create", mapData)
         end)
+
+        -- 🔥 [FIXED] เช็คว่า result มีค่า (ไม่ใช่ nil) แทนการเช็ค type เพราะ Mission Object เป็น Instance
+        if success and result then
+            MissionCreated = true
+        end
+
+        if MissionCreated then
+            Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting...", Duration=3})
+            task.wait(1)
+            
+            -- Auto Start
+            GET:InvokeServer("S_Missions", "Start")
+            return true -- ออกจาก Function ทันทีหลัง Start
+        end
     end
 
-    -- ไม่จำเป็นต้อง return true/false รอการ validate แล้ว เพราะยิงไปแล้ว
-    return true
+    Library:Notify({Title="Error", Content="Failed to create lobby (No valid difficulty).", Duration=3})
+    return false
 end
-
 -- ==========================================
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
