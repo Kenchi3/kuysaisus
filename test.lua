@@ -54,8 +54,8 @@ local fallbackStartTime = 0
 local LAST_TITAN_THRESHOLD = 5 -- ถ้าเหลือ 5 ตัวหรือน้อยกว่า ให้เริ่มเช็คเวลา
 
 local opFarmInitialized = false
-local OP_FLY_HEIGHT = 500
-local OP_MAX_TARGETS = 5
+local OP_FLY_HEIGHT = 300
+local OP_MAX_TARGETS = 3
 
 local antiGravityConn = nil
 local savedHoverY = nil
@@ -88,7 +88,7 @@ end
 -- ==========================================
 -- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
-local FLY_OFFSET = 130
+local FLY_OFFSET = 200
 local FLY_SPEED = 300
 local JITTER_AMOUNT = 2 
 local isFlying = false
