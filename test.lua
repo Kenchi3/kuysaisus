@@ -88,7 +88,7 @@ end
 -- ==========================================
 -- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
-local FLY_OFFSET = 200
+local FLY_OFFSET = 150
 local FLY_SPEED = 300
 local JITTER_AMOUNT = 2 
 local isFlying = false
