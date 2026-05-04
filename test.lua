@@ -51,11 +51,13 @@ local RaidBossWeakPoints = {}
 -- 🔥 [Variables]
 local farmingStarted = false
 local fallbackStartTime = 0
-local LAST_TITAN_THRESHOLD = 5 -- ถ้าเหลือ 5 ตัวหรือน้อยกว่า ให้เริ่มเช็คเวลา
+local LAST_TITAN_THRESHOLD = 5 
+local runCounter = 0 
+local lastJoinAttempt = 0
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 300
-local OP_MAX_TARGETS = 2
+local OP_MAX_TARGETS = 3
 
 local antiGravityConn = nil
 local savedHoverY = nil
@@ -375,6 +377,56 @@ local function isRaidCompleted()
     return false
 end
 
+-- 🔥 [Auto Join Boosted Mission Function - Updated]
+local function joinBoostedMission()
+    local boostedMap = Workspace:GetAttribute("Boosted_Map")
+    if not boostedMap then
+        Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3})
+        return false
+    end
+
+    -- 🔥 [Remove Raid Maps]
+    local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
+    if table.find(raidMaps, boostedMap) then
+        Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3})
+        return false
+    end
+
+    Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
+
+    -- 🔥 [Difficulty Logic: Try Hardest to Easiest]
+    local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
+
+    for _, diff in ipairs(difficulties) do
+        local mapData = {
+            Name = boostedMap,
+            Difficulty = diff,
+            Type = "Missions", -- Force Missions type
+            Objective = "Skirmish" -- Default kill mode
+        }
+
+        local success, result = pcall(function()
+            return GET:InvokeServer("S_Missions", "Create", mapData)
+        end)
+
+        if success and result then
+            if type(result) == "table" then
+                -- Success! Mission object returned
+                Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting in 2s...", Duration=3})
+                task.wait(2)
+                pcall(function() GET:InvokeServer("S_Missions", "Start") end)
+                return true
+            elseif type(result) == "string" then
+                -- Server returned error message (e.g. "You are not Prestige 5+")
+                -- Continue loop to try next difficulty
+            end
+        end
+    end
+
+    Library:Notify({Title="Error", Content="Failed to create lobby (No valid difficulty).", Duration=3})
+    return false
+end
+
 -- ==========================================
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
@@ -420,35 +472,33 @@ Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 
--- 🔥 [Shadow Ban Check Button]
+Tabs.Main:CreateInput("MaxRuns", { 
+    Title = "Max Runs (0 = Infinite)", 
+    Default = "0", 
+    Numeric = true, 
+    Placeholder = "e.g. 10" 
+})
+
 Tabs.Main:CreateButton{
     Title = "Shadow Ban Check",
     Description = "Check if you are shadow banned.",
     Callback = function()
         local isExploiter = Player:GetAttribute("Exploiter")
         if isExploiter then
-            Library:Notify({
-                Title = "Shadow Ban Status",
-                Content = "⚠️ BANNED: You are Shadow Banned!",
-                Duration = 5
-            })
+            Library:Notify({ Title = "Shadow Ban Status", Content = "⚠️ BANNED: You are Shadow Banned!", Duration = 5 })
         else
-            Library:Notify({
-                Title = "Shadow Ban Status",
-                Content = "✅ SAFE: You are not banned.",
-                Duration = 5
-            })
+            Library:Notify({ Title = "Shadow Ban Status", Content = "✅ SAFE: You are not banned.", Duration = 5 })
         end
     end
 }
 
-Tabs.Main:CreateButton{
-    Title = "Back to libby",
-    Description = "",
-    Callback = function()
-        POST:FireServer("Functions", "Teleport")
-    end
-}
+-- 🔥 [Auto Join Boosted Toggle]
+Tabs.Main:CreateToggle("AutoJoinBoosted", {
+    Title = "Auto Join Boosted Mission",
+    Description = "Automatically joins boosted map when in lobby.",
+    Default = false
+})
+
 -- ==========================================
 -- [ 5. Loop หลัก ]
 -- ==========================================
@@ -527,15 +577,12 @@ spawn(function()
         local currentBossTarget = getAvailableBossWeakPoint()
         local aliveCount = getAliveTitanCount()
 
-        -- 🔥 [Hybrid Logic Implementation]
         local isLastPhase = aliveCount <= LAST_TITAN_THRESHOLD
-        local canKill = true -- Default: Can kill
+        local canKill = true
 
         if Options.UseMissionTimer.Value and isLastPhase then
-            -- ถ้าอยู่ในช่วง 5 ตัวสุดท้าย ให้เช็คเวลา
             local minTime = tonumber(Options.MinMissionTime.Value) or 60
             
-            -- เริ่มจับเวลาเมื่อเจอ Titan ตัวแรก (หรือตอนเข้าช่วงสุดท้ายก็ได้ แต่แบบนี้ง่ายกว่า)
             if not farmingStarted then
                 farmingStarted = true
                 fallbackStartTime = tick()
@@ -545,18 +592,14 @@ spawn(function()
             if not gameTime then gameTime = tick() - fallbackStartTime end
             
             if gameTime < minTime then
-                canKill = false -- เวลายังไม่ถึง ห้ามฟัน
+                canKill = false
             else
-                canKill = true -- เวลาครบแล้ว ฟันได้
+                canKill = true
             end
         else
-            -- ถ้า Titan เหลือเยอะกว่า 5 ตัว หรือปิดระบบ Time Guard -> ฟันได้เลย
             canKill = true
         end
 
-        -- ==========================================
-        -- [ โหมด OP FARM ]
-        -- ==========================================
         if Options.OPFarm.Value then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
@@ -608,7 +651,7 @@ spawn(function()
                         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                         executeOPSlash(limitedTargets) 
                     else
-                        task.wait(1) -- รอเวลา
+                        task.wait(1) 
                     end
                 end
             end
@@ -617,9 +660,6 @@ spawn(function()
             continue 
         end
 
-        -- ==========================================
-        -- [ โหมด HUMANIZED FARM ]
-        -- ==========================================
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
             
@@ -661,16 +701,12 @@ spawn(function()
     end
 end)
 
--- 🔥 [Loop อัปเดตหน้าจอเวลา]
 spawn(function()
     while task.wait(0.1) do
         if Options.UseMissionTimer.Value then
             local minTime = tonumber(Options.MinMissionTime.Value) or 60
-            
-            -- ดึงเวลาจาก Server Attribute
             local gameTime = Workspace:GetAttribute("Seconds")
             
-            -- ถ้าไม่มี Attribute (บางแผนที่อาจไม่มี) ให้ใช้เวลา Local แทน
             if not gameTime then
                  if not farmingStarted then fallbackStartTime = tick() end
                  gameTime = tick() - fallbackStartTime
@@ -679,7 +715,6 @@ spawn(function()
             local remaining = minTime - gameTime
             
             if remaining > 0 then
-                -- จัดรูปแบบเป็น นาที:วินาที (MM:SS)
                 local minutes = math.floor(remaining / 60)
                 local seconds = math.floor(remaining % 60)
                 local timeString = string.format("%02d:%02d", minutes, seconds)
@@ -738,34 +773,50 @@ if ButtonsFolder then
     end)
 end
 
+-- 🔥 [Loop Auto Join Boosted]
 spawn(function()
     while task.wait(2) do
-        if not Options.AutoRetry.Value then continue end
-        
-        -- เพิ่มส่วนนี้: ตรวจสอบว่ามี Titan เกิดมาหรือยัง (ต้องมีมากกว่า 0 ถึงจะเริ่มทำงานต่อ)
-        -- สมมติว่า TitanFolder คือตำแหน่งที่เก็บตัวมอนสเตอร์ไว้
-        if #TitanFolder:GetChildren() == 0 then 
-            continue 
-        end
-
-        if isRaidMap then
-            if isRaidCompleted() then
-                openRaidChests(); task.wait(1.5)
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                farmingStarted = false
-                task.wait(3)
-            end
-        else
-            local a = getAliveTitanCount()
-            -- เช็คว่าถ้าเคยมีตัวตนแล้ว (จาก check ด้านบน) และตอนนี้เหลือ 0 แปลว่าจบเวฟแล้วถึง Retry
-            if a == 0 then 
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                farmingStarted = false
-                task.wait(3) 
+        if Options.AutoJoinBoosted.Value then
+            local inlobby = Workspace:GetAttribute("Map") == Lobby
+            if inlobby then
+                if tick() - lastJoinAttempt > 5 then
+                    lastJoinAttempt = tick()
+                    joinBoostedMission()
+                end
             end
         end
     end
 end)
+
+spawn(function()
+    while task.wait(10) do
+        if not Options.AutoRetry.Value then continue end
+        
+        local shouldProcess = false
+        if isRaidMap then
+            if isRaidCompleted() then shouldProcess = true end
+        else
+            if getAliveTitanCount() == 0 then shouldProcess = true end
+        end
+        
+        if shouldProcess then
+            runCounter = runCounter + 1
+            local maxRuns = tonumber(Options.MaxRuns.Value) or 0
+            
+            if maxRuns > 0 and runCounter >= maxRuns then
+                Library:Notify({Title="Run Limit Reached", Content="Teleporting to lobby...", Duration=5})
+                pcall(function() POST:FireServer("Functions", "Teleport") end)
+                runCounter = 0
+            else
+                if isRaidMap then openRaidChests() task.wait(1.5) end
+                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
+                farmingStarted = false
+                task.wait(3)
+            end
+        end
+    end
+end)
+
 -- ==========================================
 -- [ 6. Save/Load ]
 -- ==========================================
