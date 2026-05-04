@@ -377,21 +377,48 @@ local function isRaidCompleted()
     return false
 end
 
--- 🔥 [Auto Join Boosted Mission Function - Updated]
+-- 🔥 [Auto Join Boosted Mission Function - FIXED]
 local function joinBoostedMission()
+    local MissionCreated = {}
     local boostedMap = Workspace:GetAttribute("Boosted_Map")
     if not boostedMap then
         Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3})
         return false
     end
 
+    -- 🔥 [Remove Raid Maps]
+    local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
+    if table.find(raidMaps, boostedMap) then
+        Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3})
+        return false
+    end
+
     Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
 
-    GET:InvokeServer("S_Missions", "Create", boostedMap)
-    task.wait(1)
-    Library:Notify({Title="Boosted Map", Content="Created" .. boostedMap, Duration=3})
-    GET:InvokeServer("S_Missions", "Start")
-    Library:Notify({Title="Boosted Map", Content="Started" .. boostedMap, Duration=3})
+    -- 🔥 [Difficulty Logic: Try Hardest to Easiest]
+    local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
+
+    for _, diff in ipairs(difficulties) do
+        local mapData = {
+            Name = boostedMap,
+            Difficulty = diff,
+            Type = "Missions",
+            Objective = "Skirmish"
+        }
+
+        if not MissionCreated then
+            -- 🔥 [FIXED] Send mapData (table) instead of boostedMap (string)
+            GET:InvokeServer("S_Missions", "Create", mapData)
+            MissionCreated = true
+
+        elseif MissionCreated then
+
+            GET:InvokeServer("S_Missions", "Start")
+            MissionCreated = false
+
+        end
+    end
+
 end
 
 -- ==========================================
@@ -459,7 +486,6 @@ Tabs.Main:CreateButton{
     end
 }
 
--- 🔥 [Auto Join Boosted Toggle]
 Tabs.Main:CreateToggle("AutoJoinBoosted", {
     Title = "Auto Join Boosted Mission",
     Description = "Automatically joins boosted map when in lobby.",
@@ -740,10 +766,10 @@ if ButtonsFolder then
     end)
 end
 
--- 🔥 [Loop Auto Join Boosted]
 spawn(function()
     while task.wait(2) do
         if Options.AutoJoinBoosted.Value then
+            -- 🔥 [Check Lobby Attribute]
             local inlobby = Workspace:GetAttribute("Map") == "Lobby"
             if inlobby then
                 if tick() - lastJoinAttempt > 5 then
@@ -805,5 +831,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Hybrid Guard Active!", Duration=5})
+Library:Notify({Title="Loaded", Content="Script Fixed & Applied!", Duration=5})
 SaveManager:LoadAutoloadConfig()
