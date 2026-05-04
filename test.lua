@@ -395,8 +395,6 @@ Tabs.Main:CreateSlider("BurstAmount", {
     Min = 1, Max = 5, Default = 5, Rounding = 0
 })
 
-
-
 Tabs.Main:CreateSection("Auto Farm (Safe)")
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Description = "", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
@@ -421,6 +419,28 @@ local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
 Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
+
+-- 🔥 [Shadow Ban Check Button]
+Tabs.Main:CreateButton{
+    Title = "Shadow Ban Check",
+    Description = "Check if you are shadow banned.",
+    Callback = function()
+        local isExploiter = Player:GetAttribute("Exploiter")
+        if isExploiter then
+            Library:Notify({
+                Title = "Shadow Ban Status",
+                Content = "⚠️ BANNED: You are Shadow Banned!",
+                Duration = 5
+            })
+        else
+            Library:Notify({
+                Title = "Shadow Ban Status",
+                Content = "✅ SAFE: You are not banned.",
+                Duration = 5
+            })
+        end
+    end
+}
 
 -- ==========================================
 -- [ 5. Loop หลัก ]
