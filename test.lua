@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "By nxnn_nn V1.2",
+    SubTitle = "Smart Time Guard Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -48,9 +48,10 @@ local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
 
--- 🔥 [แก้ไข] เปลี่ยนระบบนับเวลา
-local missionStartTime = nil -- เริ่มต้นเป็น nil ก่อน
-local timerStarted = false   -- Flag สำหรับเช็คว่าเริ่มนับแล้วหรือยัง
+-- 🔥 [Smart Time Guard Variables]
+local initialTitanCount = 0 -- จำนวน Titan ตอนเริ่มเกม
+local farmingStarted = false -- สถานะว่าเริ่มฟาร์มแล้วหรือยัง
+local fallbackStartTime = 0 -- ตัวแปรสำรองถ้าหา Attribute ไม่เจอ
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 500
@@ -406,14 +407,13 @@ Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2
 
 Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
-    Title = "Mission Time Guard", 
-    Description = "Starts counting on first hit. Pause if finishing too early.", 
+    Title = "Smart Mission Time Guard", 
+    Description = "Pace kills based on server time.", 
     Default = false 
 })
 
 Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
 
--- 🔥 [สร้าง Paragraph สำหรับแสดงเวลา]
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
     Title = "Timer Status",
     Content = "Status: Idle"
@@ -430,15 +430,14 @@ spawn(function()
     spawn(monitorRaidBosses)
     
     while task.wait(0.1) do
-        -- 🔥 [Reset Logic เมื่อตาย]
         if Humanoid.Health <= 0 then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil
             
-            -- Reset Timer
-            timerStarted = false
-            missionStartTime = nil
+            -- Reset Smart Timer
+            initialTitanCount = 0
+            farmingStarted = false
             
             Character = Player.Character or Player.CharacterAdded:Wait()
             RootPart = Character:WaitForChild("HumanoidRootPart")
@@ -452,9 +451,9 @@ spawn(function()
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false
             
-            -- Reset Timer เมื่อปิด Farm
-            timerStarted = false
-            missionStartTime = nil
+            -- Reset Smart Timer
+            initialTitanCount = 0
+            farmingStarted = false
             
             if NoclipConnection then
                 NoclipConnection:Disconnect()
@@ -504,6 +503,37 @@ spawn(function()
         end
 
         local currentBossTarget = getAvailableBossWeakPoint()
+        local aliveCount = getAliveTitanCount()
+
+        -- 🔥 [Smart Timer Initialization]
+        if not farmingStarted and aliveCount > 0 then
+            farmingStarted = true
+            initialTitanCount = aliveCount
+            fallbackStartTime = tick() -- ตั้งเวลาสำรอง
+        end
+
+        -- 🔥 [Smart Time Guard Logic]
+        local canKill = true
+        if Options.UseMissionTimer.Value and farmingStarted and initialTitanCount > 0 then
+            local minTime = tonumber(Options.MinMissionTime.Value) or 60
+            
+            -- พยายามดึงเวลาจาก Workspace Attribute ก่อน
+            local gameTime = Workspace:GetAttribute("Seconds")
+            if not gameTime then
+                -- ถ้าไม่มี Attribute ให้ใช้ tick() สำรอง
+                gameTime = tick() - fallbackStartTime
+            end
+            
+            -- คำนวณว่าควรจะฆ่าไปกี่ตัวแล้ว (Linear Distribution)
+            -- Formula: (TimeElapsed / MinTime) * InitialCount
+            local maxAllowedKills = math.floor((gameTime / minTime) * initialTitanCount)
+            local killedCount = initialTitanCount - aliveCount
+            
+            if killedCount >= maxAllowedKills and gameTime < minTime then
+                canKill = false
+                -- ไม่ฟัน รอเวลาผ่าน
+            end
+        end
 
         -- ==========================================
         -- [ โหมด OP FARM ]
@@ -547,11 +577,6 @@ spawn(function()
             end
 
             if currentBossTarget then
-                -- 🔥 [Start Timer on First Action]
-                if not timerStarted then
-                    missionStartTime = tick()
-                    timerStarted = true
-                end
                 performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
@@ -560,23 +585,12 @@ spawn(function()
                 for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
 
                 if #limitedTargets > 0 then
-                    -- 🔥 [Start Timer on First Action]
-                    if not timerStarted then
-                        missionStartTime = tick()
-                        timerStarted = true
+                    if canKill then
+                        performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
+                        executeOPSlash(limitedTargets) 
+                    else
+                        task.wait(1) -- รอถ้าฆ่าเร็วเกิน
                     end
-
-                    local aliveCount = getAliveTitanCount()
-                    local elapsed = tick() - missionStartTime
-                    local minTime = tonumber(Options.MinMissionTime.Value) or 60
-
-                    if Options.UseMissionTimer.Value and (#limitedTargets >= aliveCount) and (elapsed < minTime) then
-                        task.wait(1)
-                        continue
-                    end
-
-                    performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
-                    executeOPSlash(limitedTargets) 
                 end
             end
             
@@ -600,15 +614,12 @@ spawn(function()
             if savedHoverY then savedHoverY = nil end 
             
             if currentBossTarget then
-                -- 🔥 [Start Timer on First Action]
-                if not timerStarted then
-                    missionStartTime = tick()
-                    timerStarted = true
-                end
                 humanizedFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
                 
-                executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                if canKill then
+                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                end
                 task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
             else
                 local limit = Options.TargetLimit.Value
@@ -618,27 +629,12 @@ spawn(function()
                 local targets, anchorPos = getTargetCluster(limit, radius)
 
                 if #targets > 0 and anchorPos then
-                    -- 🔥 [Start Timer on First Action]
-                    if not timerStarted then
-                        missionStartTime = tick()
-                        timerStarted = true
-                    end
-
-                    local aliveCount = getAliveTitanCount()
-                    local elapsed = tick() - missionStartTime
-                    local minTime = tonumber(Options.MinMissionTime.Value) or 60
-
-                    if Options.UseMissionTimer.Value and (#targets >= aliveCount) and (elapsed < minTime) then
-                        humanizedFlyTo(anchorPos)
-                        while isFlying do task.wait(0.05) end
-                        task.wait(1)
-                        continue
-                    end
-
                     humanizedFlyTo(anchorPos)
                     while isFlying do task.wait(0.05) end
                     
-                    executeMultiSlash(targets)
+                    if canKill then
+                        executeMultiSlash(targets)
+                    end
                     task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
             end
@@ -650,21 +646,22 @@ end)
 spawn(function()
     while task.wait(0.1) do
         if Options.UseMissionTimer.Value then
-            if timerStarted and missionStartTime then
-                local elapsed = tick() - missionStartTime
-                local target = tonumber(Options.MinMissionTime.Value) or 60
-                local remaining = target - elapsed
-                local status = ""
+            local gameTime = Workspace:GetAttribute("Seconds")
+            if not gameTime then gameTime = tick() - fallbackStartTime end
+            
+            local minTime = tonumber(Options.MinMissionTime.Value) or 60
+            local status = ""
+            
+            if farmingStarted then
+                local alive = getAliveTitanCount()
+                local killed = initialTitanCount - alive
+                local allowed = math.floor((gameTime / minTime) * initialTitanCount)
                 
-                if remaining > 0 then
-                    status = string.format("Elapsed: %.1fs\nRemaining: %.1fs", elapsed, remaining)
-                else
-                    status = string.format("Time's up! (Elapsed: %.1fs)", elapsed)
-                end
-                TimerDisplay:SetContent(status)
+                status = string.format("Time: %.1fs / %ds\nKills: %d (Allowed: %d)\nTitans Left: %d", gameTime, minTime, killed, allowed, alive)
             else
-                TimerDisplay:SetContent("Status: Waiting for first hit...")
+                status = "Status: Waiting for Titan..."
             end
+            TimerDisplay:SetContent(status)
         else
             TimerDisplay:SetContent("Status: Disabled")
         end
@@ -722,19 +719,18 @@ spawn(function()
             if isRaidCompleted() then
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                -- 🔥 [Reset Timer on Retry]
-                timerStarted = false
-                missionStartTime = nil
+                -- Reset Smart Timer
+                initialTitanCount = 0
+                farmingStarted = false
                 task.wait(3)
             end
         else
-            local a = 0
-            if TitansFolder then for _, t in ipairs(TitansFolder:GetChildren()) do if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then a = a + 1 end end end
+            local a = getAliveTitanCount()
             if a == 0 then 
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                -- 🔥 [Reset Timer on Retry]
-                timerStarted = false
-                missionStartTime = nil
+                -- Reset Smart Timer
+                initialTitanCount = 0
+                farmingStarted = false
                 task.wait(3) 
             end
         end
@@ -762,5 +758,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
+Library:Notify({Title="Loaded", Content="Smart Pace Control Active!", Duration=5})
 SaveManager:LoadAutoloadConfig()
