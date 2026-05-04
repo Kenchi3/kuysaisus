@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "Quota System Edition",
+    SubTitle = "Hybrid Time Guard",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -48,11 +48,10 @@ local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
 
--- 🔥 [Quota System Variables]
-local totalTitanCount = 0 -- จำนวน Titan รวมทั้งหมดที่เคยเจอ
-local lastAliveCount = 0 -- จำนวน Titan ที่มีชีวิตรอบที่แล้ว (ใช้ track wave)
+-- 🔥 [Variables]
 local farmingStarted = false
 local fallbackStartTime = 0
+local LAST_TITAN_THRESHOLD = 5 -- ถ้าเหลือ 5 ตัวหรือน้อยกว่า ให้เริ่มเช็คเวลา
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 500
@@ -408,8 +407,8 @@ Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2
 
 Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
-    Title = "Smart Mission Time Guard", 
-    Description = "Pace kills based on server time.", 
+    Title = "Hybrid Time Guard", 
+    Description = "Free kill > 5 titans. Wait time if <= 5.", 
     Default = false 
 })
 
@@ -436,9 +435,6 @@ spawn(function()
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil
             
-            -- Reset Quota System
-            totalTitanCount = 0
-            lastAliveCount = 0
             farmingStarted = false
             
             Character = Player.Character or Player.CharacterAdded:Wait()
@@ -453,9 +449,6 @@ spawn(function()
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
             isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false
             
-            -- Reset Quota System
-            totalTitanCount = 0
-            lastAliveCount = 0
             farmingStarted = false
             
             if NoclipConnection then
@@ -508,39 +501,31 @@ spawn(function()
         local currentBossTarget = getAvailableBossWeakPoint()
         local aliveCount = getAliveTitanCount()
 
-        -- 🔥 [Quota System Logic]
-        if aliveCount > 0 then
-            if not farmingStarted then
-                farmingStarted = true
-                totalTitanCount = aliveCount
-                lastAliveCount = aliveCount
-                fallbackStartTime = tick()
-            else
-                -- ถ้าจำนวน Titan ที่มีชีวิตมากกว่าครั้งก่อน = มี Wave ใหม่เกิด
-                if aliveCount > lastAliveCount then
-                    totalTitanCount = totalTitanCount + (aliveCount - lastAliveCount)
-                end
-                lastAliveCount = aliveCount
-            end
-        end
+        -- 🔥 [Hybrid Logic Implementation]
+        local isLastPhase = aliveCount <= LAST_TITAN_THRESHOLD
+        local canKill = true -- Default: Can kill
 
-        local killQuota = math.huge -- ถ้าไม่เปิด Timer ให้ฆ่าได้เยอะๆ
-        if Options.UseMissionTimer.Value and farmingStarted and totalTitanCount > 0 then
+        if Options.UseMissionTimer.Value and isLastPhase then
+            -- ถ้าอยู่ในช่วง 5 ตัวสุดท้าย ให้เช็คเวลา
             local minTime = tonumber(Options.MinMissionTime.Value) or 60
             
+            -- เริ่มจับเวลาเมื่อเจอ Titan ตัวแรก (หรือตอนเข้าช่วงสุดท้ายก็ได้ แต่แบบนี้ง่ายกว่า)
+            if not farmingStarted then
+                farmingStarted = true
+                fallbackStartTime = tick()
+            end
+
             local gameTime = Workspace:GetAttribute("Seconds")
             if not gameTime then gameTime = tick() - fallbackStartTime end
             
-            -- คำนวณว่าเวลานี้ควรฆ่าไปกี่ % แล้ว
-            -- MaxAllowed = (TimeElapsed / MinTime) * TotalTitanCount
-            local maxAllowedKills = math.floor((gameTime / minTime) * totalTitanCount)
-            local killedCount = totalTitanCount - aliveCount
-            
-            -- Quota คือจำนวนที่เรายังฆ่าได้เพิ่ม
-            killQuota = maxAllowedKills - killedCount
-            
-            -- ป้องกันค่าติดลบ
-            if killQuota < 0 then killQuota = 0 end
+            if gameTime < minTime then
+                canKill = false -- เวลายังไม่ถึง ห้ามฟัน
+            else
+                canKill = true -- เวลาครบแล้ว ฟันได้
+            end
+        else
+            -- ถ้า Titan เหลือเยอะกว่า 5 ตัว หรือปิดระบบ Time Guard -> ฟันได้เลย
+            canKill = true
         end
 
         -- ==========================================
@@ -585,29 +570,20 @@ spawn(function()
             end
 
             if currentBossTarget then
-                -- Boss ไม่ควรโดนจำกัดโควต้ามากนัก เพราะบอสสำคัญ
                 performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
                 local allTargets = getAllTargets()
-                
-                -- 🔥 [Apply Quota to OP Farm]
-                if #allTargets > 0 and killQuota > 0 then
-                    -- เลือกเป้าหมายแค่เท่าที่เราได้โควต้า
-                    local targetsToKill = {}
-                    local limit = math.min(#allTargets, OP_MAX_TARGETS, killQuota)
-                    
-                    for i = 1, limit do
-                        table.insert(targetsToKill, allTargets[i])
-                    end
-                    
-                    if #targetsToKill > 0 then
+                local limitedTargets = {}
+                for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
+
+                if #limitedTargets > 0 then
+                    if canKill then
                         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
-                        executeOPSlash(targetsToKill)
+                        executeOPSlash(limitedTargets) 
+                    else
+                        task.wait(1) -- รอเวลา
                     end
-                else
-                    -- ถ้าโควต้าเต็ม หรือไม่มีเป้า -> รอ
-                    task.wait(1)
                 end
             end
             
@@ -633,7 +609,10 @@ spawn(function()
             if currentBossTarget then
                 humanizedFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
-                executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                
+                if canKill then
+                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                end
                 task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
             else
                 local limit = Options.TargetLimit.Value
@@ -643,28 +622,11 @@ spawn(function()
                 local targets, anchorPos = getTargetCluster(limit, radius)
 
                 if #targets > 0 and anchorPos then
-                    -- 🔥 [Apply Quota to Humanized Farm]
-                    if killQuota > 0 then
-                        local targetsToKill = {}
-                        local clampedLimit = math.min(#targets, killQuota)
-                        
-                        for i = 1, clampedLimit do
-                            table.insert(targetsToKill, targets[i])
-                        end
-                        
-                        if #targetsToKill > 0 then
-                            -- ถ้าเราต้องฆ่าแค่ 1 ตัว แต่เป้าอยู่กลุ่มใหญ่ -> บินไปใกล้เป้านั้นๆ
-                            -- แต่เพื่อความปลอดภัย จะบินไปที่ anchorPos ของกลุ่มเดิม แต่ฟันแค่ตัวในโควต้า
-                            humanizedFlyTo(anchorPos)
-                            while isFlying do task.wait(0.05) end
-                            
-                            executeMultiSlash(targetsToKill)
-                        end
-                    else
-                        -- ถ้า Quota เต็ม ให้บินไปใกล้ๆ แต่ไม่ฟัน (รอเวลา)
-                        humanizedFlyTo(anchorPos)
-                        while isFlying do task.wait(0.05) end
-                        task.wait(1)
+                    humanizedFlyTo(anchorPos)
+                    while isFlying do task.wait(0.05) end
+                    
+                    if canKill then
+                        executeMultiSlash(targets)
                     end
                     task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
@@ -677,22 +639,25 @@ end)
 spawn(function()
     while task.wait(0.1) do
         if Options.UseMissionTimer.Value then
-            local gameTime = Workspace:GetAttribute("Seconds")
-            if not gameTime then gameTime = tick() - fallbackStartTime end
+            local alive = getAliveTitanCount()
+            local isLastPhase = alive <= LAST_TITAN_THRESHOLD
             
-            local minTime = tonumber(Options.MinMissionTime.Value) or 60
             local status = ""
             
-            if farmingStarted then
-                local alive = getAliveTitanCount()
-                local killed = totalTitanCount - alive
-                local maxAllowed = math.floor((gameTime / minTime) * totalTitanCount)
-                local quota = maxAllowed - killed
+            if isLastPhase then
+                local gameTime = Workspace:GetAttribute("Seconds")
+                if not gameTime and farmingStarted then gameTime = tick() - fallbackStartTime else gameTime = 0 end
                 
-                status = string.format("Time: %.1fs / %ds\nTotal: %d | Killed: %d\nAllowed: %d | Quota Left: %d", 
-                    gameTime, minTime, totalTitanCount, killed, maxAllowed, math.max(0, quota))
+                local minTime = tonumber(Options.MinMissionTime.Value) or 60
+                local remaining = minTime - gameTime
+                
+                if remaining > 0 then
+                    status = string.format("Phase: FINAL 5\nTime Left: %.1fs", remaining)
+                else
+                    status = string.format("Phase: FINAL 5\nTime's Up! Finishing...")
+                end
             else
-                status = "Status: Waiting for Titan..."
+                status = string.format("Phase: FARMING\nTitans Left: %d (Threshold: %d)", alive, LAST_TITAN_THRESHOLD)
             end
             TimerDisplay:SetContent(status)
         else
@@ -752,9 +717,6 @@ spawn(function()
             if isRaidCompleted() then
                 openRaidChests(); task.wait(1.5)
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                -- Reset Quota System
-                totalTitanCount = 0
-                lastAliveCount = 0
                 farmingStarted = false
                 task.wait(3)
             end
@@ -762,9 +724,6 @@ spawn(function()
             local a = getAliveTitanCount()
             if a == 0 then 
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                -- Reset Quota System
-                totalTitanCount = 0
-                lastAliveCount = 0
                 farmingStarted = false
                 task.wait(3) 
             end
@@ -793,5 +752,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Quota System Active!", Duration=5})
+Library:Notify({Title="Loaded", Content="Hybrid Guard Active!", Duration=5})
 SaveManager:LoadAutoloadConfig()
