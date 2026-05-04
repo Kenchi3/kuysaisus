@@ -442,6 +442,13 @@ Tabs.Main:CreateButton{
     end
 }
 
+Tabs.Main:CreateButton{
+    Title = "Back to libby",
+    Description = "",
+    Callback = function()
+        POST:FireServer("Functions", "Teleport")
+    end
+}
 -- ==========================================
 -- [ 5. Loop หลัก ]
 -- ==========================================
