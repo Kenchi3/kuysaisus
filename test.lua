@@ -786,7 +786,7 @@ spawn(function()
 end)
 
 spawn(function()
-    while task.wait(10) do
+    while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
         
         local shouldProcess = false
