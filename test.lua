@@ -396,7 +396,6 @@ Tabs.Main:CreateSlider("BurstAmount", {
 })
 
 
-Tabs.Main:CreateSlider("OPFarmDelay", { Title = "OP Farm Delay (Sec)", Min = 0.05, Max = 1.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Auto Farm (Safe)")
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Description = "", Default = false })
@@ -587,7 +586,7 @@ spawn(function()
                 end
             end
             
-            task.wait(Options.OPFarmDelay.Value)
+            task.wait(1)
             continue 
         end
 
