@@ -639,29 +639,31 @@ end)
 spawn(function()
     while task.wait(0.1) do
         if Options.UseMissionTimer.Value then
-            local alive = getAliveTitanCount()
-            local isLastPhase = alive <= LAST_TITAN_THRESHOLD
+            local minTime = tonumber(Options.MinMissionTime.Value) or 60
             
-            local status = ""
+            -- ดึงเวลาจาก Server Attribute
+            local gameTime = Workspace:GetAttribute("Seconds")
             
-            if isLastPhase then
-                local gameTime = Workspace:GetAttribute("Seconds")
-                if not gameTime and farmingStarted then gameTime = tick() - fallbackStartTime else gameTime = 0 end
-                
-                local minTime = tonumber(Options.MinMissionTime.Value) or 60
-                local remaining = minTime - gameTime
-                
-                if remaining > 0 then
-                    status = string.format("Phase: FINAL 5\nTime Left: %.1fs", remaining)
-                else
-                    status = string.format("Phase: FINAL 5\nTime's Up! Finishing...")
-                end
-            else
-                status = string.format("Phase: FARMING\nTitans Left: %d (Threshold: %d)", alive, LAST_TITAN_THRESHOLD)
+            -- ถ้าไม่มี Attribute (บางแผนที่อาจไม่มี) ให้ใช้เวลา Local แทน
+            if not gameTime then
+                 if not farmingStarted then fallbackStartTime = tick() end
+                 gameTime = tick() - fallbackStartTime
             end
-            TimerDisplay:SetContent(status)
+            
+            local remaining = minTime - gameTime
+            
+            if remaining > 0 then
+                -- จัดรูปแบบเป็น นาที:วินาที (MM:SS)
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                local timeString = string.format("%02d:%02d", minutes, seconds)
+                
+                TimerDisplay:SetContent(timeString)
+            else
+                TimerDisplay:SetContent("Ready!")
+            end
         else
-            TimerDisplay:SetContent("Status: Disabled")
+            TimerDisplay:SetContent("--:--")
         end
     end
 end)
