@@ -379,14 +379,12 @@ end
 
 -- 🔥 [Auto Join Boosted Mission Function - FIXED]
 local function joinBoostedMission()
-    local MissionCreated = {}
     local boostedMap = Workspace:GetAttribute("Boosted_Map")
     if not boostedMap then
         Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3})
         return false
     end
 
-    -- 🔥 [Remove Raid Maps]
     local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
     if table.find(raidMaps, boostedMap) then
         Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3})
@@ -395,7 +393,7 @@ local function joinBoostedMission()
 
     Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
 
-    -- 🔥 [Difficulty Logic: Try Hardest to Easiest]
+    -- เรียงลำดับความยากจากมากไปน้อย
     local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
 
     for _, diff in ipairs(difficulties) do
@@ -406,19 +404,19 @@ local function joinBoostedMission()
             Objective = "Skirmish"
         }
 
-        if not MissionCreated then
-            -- 🔥 [FIXED] Send mapData (table) instead of boostedMap (string)
+        -- ใช้ task.spawn เพื่อยิง Remote แบบไม่ต้องรอผลลัพธ์ (Async)
+        -- ทำให้ Loop วิ่งไป Difficulty ถัดไปได้เลยโดยไม่หยุดรอ
+        task.spawn(function()
+            -- ยิง Create
             GET:InvokeServer("S_Missions", "Create", mapData)
-            MissionCreated = true
-
-        elseif MissionCreated then
-
+            
+            -- ยิง Start ทันทีหลัง Create (โดยไม่เช็คว่า Create สำเร็จไหม)
             GET:InvokeServer("S_Missions", "Start")
-            MissionCreated = false
-
-        end
+        end)
     end
 
+    -- ไม่จำเป็นต้อง return true/false รอการ validate แล้ว เพราะยิงไปแล้ว
+    return true
 end
 
 -- ==========================================
