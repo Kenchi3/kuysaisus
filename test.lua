@@ -734,6 +734,13 @@ end
 spawn(function()
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
+        
+        -- เพิ่มส่วนนี้: ตรวจสอบว่ามี Titan เกิดมาหรือยัง (ต้องมีมากกว่า 0 ถึงจะเริ่มทำงานต่อ)
+        -- สมมติว่า TitanFolder คือตำแหน่งที่เก็บตัวมอนสเตอร์ไว้
+        if #TitanFolder:GetChildren() == 0 then 
+            continue 
+        end
+
         if isRaidMap then
             if isRaidCompleted() then
                 openRaidChests(); task.wait(1.5)
@@ -743,6 +750,7 @@ spawn(function()
             end
         else
             local a = getAliveTitanCount()
+            -- เช็คว่าถ้าเคยมีตัวตนแล้ว (จาก check ด้านบน) และตอนนี้เหลือ 0 แปลว่าจบเวฟแล้วถึง Retry
             if a == 0 then 
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
@@ -751,7 +759,6 @@ spawn(function()
         end
     end
 end)
-
 -- ==========================================
 -- [ 6. Save/Load ]
 -- ==========================================
