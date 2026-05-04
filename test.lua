@@ -408,7 +408,7 @@ Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2
 Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Hybrid Time Guard", 
-    Description = "Free kill > 5 titans. Wait time if <= 5.", 
+    Description = "Stop farming until input time", 
     Default = false 
 })
 
