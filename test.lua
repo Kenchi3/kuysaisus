@@ -385,46 +385,13 @@ local function joinBoostedMission()
         return false
     end
 
-    -- 🔥 [Remove Raid Maps]
-    local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
-    if table.find(raidMaps, boostedMap) then
-        Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3})
-        return false
-    end
-
     Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
 
-    -- 🔥 [Difficulty Logic: Try Hardest to Easiest]
-    local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
-
-    for _, diff in ipairs(difficulties) do
-        local mapData = {
-            Name = boostedMap,
-            Difficulty = diff,
-            Type = "Missions", -- Force Missions type
-            Objective = "Skirmish" -- Default kill mode
-        }
-
-        local success, result = pcall(function()
-            return GET:InvokeServer("S_Missions", "Create", mapData)
-        end)
-
-        if success and result then
-            if type(result) == "table" then
-                -- Success! Mission object returned
-                Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting in 2s...", Duration=3})
-                task.wait(2)
-                pcall(function() GET:InvokeServer("S_Missions", "Start") end)
-                return true
-            elseif type(result) == "string" then
-                -- Server returned error message (e.g. "You are not Prestige 5+")
-                -- Continue loop to try next difficulty
-            end
-        end
-    end
-
-    Library:Notify({Title="Error", Content="Failed to create lobby (No valid difficulty).", Duration=3})
-    return false
+    GET:InvokeServer("S_Missions", "Create", boostedMap)
+    task.wait(1)
+    Library:Notify({Title="Boosted Map", Content="Created" .. boostedMap, Duration=3})
+    GET:InvokeServer("S_Missions", "Start")
+    Library:Notify({Title="Boosted Map", Content="Started" .. boostedMap, Duration=3})
 end
 
 -- ==========================================
@@ -777,7 +744,7 @@ end
 spawn(function()
     while task.wait(2) do
         if Options.AutoJoinBoosted.Value then
-            local inlobby = Workspace:GetAttribute("Map") == Lobby
+            local inlobby = Workspace:GetAttribute("Map") == "Lobby"
             if inlobby then
                 if tick() - lastJoinAttempt > 5 then
                     lastJoinAttempt = tick()
