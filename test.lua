@@ -732,7 +732,7 @@ if ButtonsFolder then
 end
 
 spawn(function()
-    while task.wait(1) do
+    while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
         if isRaidMap then
             if isRaidCompleted() then
