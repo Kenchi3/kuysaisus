@@ -912,7 +912,8 @@ spawn(function()
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
         local missionstarted = false
-        getAliveTitanCount() > 0 then missionstarted = true
+        if getAliveTitanCount() > 0 then 
+            missionstarted = true
         end
         
         local shouldProcess = false
