@@ -32,6 +32,7 @@ local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService") -- สำหรับ JSON
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -47,12 +48,13 @@ local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface
 local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
+local isLobby = Workspace:GetAttribute("Map") == "Lobby"
 
 -- 🔥 [Variables]
 local farmingStarted = false
 local fallbackStartTime = 0
 local LAST_TITAN_THRESHOLD = 5 
-local runCounter = 0 
+local runCounter = 0
 local lastJoinAttempt = 0
 
 local opFarmInitialized = false
@@ -61,6 +63,35 @@ local OP_MAX_TARGETS = 3
 
 local antiGravityConn = nil
 local savedHoverY = nil
+
+-- [ระบบบันทึก Run Count ลงไฟล์]
+local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
+
+local function saveRunCount()
+    if not isfolder("NonnyHub") then makefolder("NonnyHub") end
+    if not isfolder("NonnyHub/game") then makefolder("NonnyHub/game") end
+    
+    pcall(function()
+        local data = { count = runCounter }
+        writefile(runCountFile, HttpService:JSONEncode(data))
+    end)
+end
+
+local function loadRunCount()
+    pcall(function()
+        if isfile(runCountFile) then
+            local rawData = readfile(runCountFile)
+            local data = HttpService:JSONDecode(rawData)
+            if data and type(data.count) == "number" then
+                runCounter = data.count
+                print("Loaded Run Count: " .. runCounter)
+            end
+        end
+    end)
+end
+
+-- โหลดค่า Run Count ทันทีที่เริ่มสคริปต์
+loadRunCount()
 
 local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
@@ -408,7 +439,6 @@ local function joinBoostedMission()
             return GET:InvokeServer("S_Missions", "Create", mapData)
         end)
 
-        -- 🔥 [FIXED] เช็คว่า result มีค่า (ไม่ใช่ nil) แทนการเช็ค type เพราะ Mission Object เป็น Instance
         if success and result then
             MissionCreated = true
         end
@@ -416,10 +446,8 @@ local function joinBoostedMission()
         if MissionCreated then
             Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting...", Duration=3})
             task.wait(1)
-            
-            -- Auto Start
             GET:InvokeServer("S_Missions", "Start")
-            return true -- ออกจาก Function ทันทีหลัง Start
+            return true
         end
     end
 
@@ -471,7 +499,6 @@ Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 
--- เพิ่มส่วนนี้เข้าไปใน Section Misc หลังจาก Input MaxRuns
 local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", {
     Title = "Run Progress",
     Content = "Current: 0 / Max: 0"
@@ -483,6 +510,8 @@ Tabs.Main:CreateInput("MaxRuns", {
     Numeric = true, 
     Placeholder = "e.g. 10" 
 })
+
+-- [ลบปุ่ม Reset Run Count ออกแล้ว]
 
 Tabs.Main:CreateButton{
     Title = "Shadow Ban Check",
@@ -506,7 +535,6 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", {
 -- ==========================================
 -- [ 5. Loop หลัก ]
 -- ==========================================
--- เพิ่ม Loop นี้เข้าไป (แนะนำให้วางใกล้ Loop ของ TimerDisplay)
 spawn(function()
     while task.wait(0.5) do
         local currentCount = runCounter
@@ -520,6 +548,18 @@ spawn(function()
         end
         
         RunDisplay:SetContent(statusText)
+    end
+end)
+
+-- [เพิ่มเติม] Loop สำหรับ Reset Run Count เมื่ออยู่ใน Lobby
+spawn(function()
+    while task.wait(2) do
+        if isLobby then
+            if runCounter ~= 0 then
+                runCounter = 0
+                saveRunCount()
+            end
+        end
     end
 end)
 
@@ -797,7 +837,6 @@ end
 spawn(function()
     while task.wait(2) do
         if Options.AutoJoinBoosted.Value then
-            -- 🔥 [Check Lobby Attribute]
             local inlobby = Workspace:GetAttribute("Map") == "Lobby"
             if inlobby then
                 if tick() - lastJoinAttempt > 5 then
@@ -820,19 +859,21 @@ spawn(function()
             if getAliveTitanCount() == 0 then shouldProcess = true end
         end
         
-        if shouldProcess then
+        if shouldProcess and not isLobby then
             runCounter = runCounter + 1
+            saveRunCount() -- บันทึกเมื่อเพิ่ม
+            
             local maxRuns = tonumber(Options.MaxRuns.Value) or 0
             
             if maxRuns > 0 and runCounter >= maxRuns then
                 Library:Notify({Title="Run Limit Reached", Content="Teleporting to lobby...", Duration=5})
                 pcall(function() POST:FireServer("Functions", "Teleport") end)
-                runCounter = 0
+                -- ไม่จำเป็นต้องรีเซ็ตตรงนี้ เพราะ Loop ตรวจจับ Lobby จะรีเซ็ตให้อัตโนมัติ
             else
                 if isRaidMap then openRaidChests() task.wait(1.5) end
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
-                task.wait(3)
+                task.wait(6)
             end
         end
     end
