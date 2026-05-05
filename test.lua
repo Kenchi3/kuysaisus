@@ -267,7 +267,6 @@ local function executeStealthSlash(napesArray, isOP)
     
     if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value and not isOP then
         task.wait(math.random(50, 100) / 1000)
-        performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
     end
     
     for i, napePart in ipairs(napesArray) do
