@@ -490,10 +490,10 @@ Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Hybrid Time Guard", 
     Description = "Stop farming until input time", 
-    Default = false 
+    Default = true 
 })
 
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "40", Numeric = true, Placeholder = "e.g. 120" })
 
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
     Title = "Timer Status",
@@ -654,7 +654,7 @@ spawn(function()
             canKill = true
         end
 
-        if Options.OPFarm.Value then
+        if Options.OPFarm.Value and not isLobby then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
