@@ -254,6 +254,38 @@ local function getAliveTitanCount()
     return count
 end
 
+local function getTargetsNearAnchor(maxCount, radius)
+    local anchorPos = getRaidAnchorPos()
+    if not anchorPos then return {}, nil end
+    if not TitansFolder then return {}, nil end
+    
+    local targets = {}
+    for _, titan in ipairs(TitansFolder:GetChildren()) do
+        if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
+            -- รองรับทั้งบอสที่มี WeakPoint และไททันธรรมดา
+            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp and (tp.Position - anchorPos).Magnitude <= radius then
+                table.insert(targets, tp)
+            end
+        end
+    end
+    
+    -- เรียงลำดับไททันที่ใกล้ Anchor ที่สุดขึ้นก่อน เพื่อป้องกัน Anchor ได้แม่นยำขึ้น
+    table.sort(targets, function(a, b)
+        return (a.Position - anchorPos).Magnitude < (b.Position - anchorPos).Magnitude
+    end)
+    
+    local limitedTargets = {}
+    for i = 1, math.min(#targets, maxCount) do
+        table.insert(limitedTargets, targets[i])
+    end
+    
+    return limitedTargets, anchorPos
+end
+
+local function getTargetCluster(maxCount, radius)
+-- ... โค้ดเดิม ...
+
 local function getTargetCluster(maxCount, radius)
     local closestPart, minDistance, anchorPosition = nil, math.huge, RootPart.Position
     if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPosition = p end end
@@ -529,33 +561,15 @@ spawn(function()
             canKill = gameTime >= minTime
         end
 
-        -- ==========================================
-        -- [ระบบใหม่] Raid Anchor Focus
-        -- ==========================================
-        if isRaidMap then
-            local anchorObj, anchorPos = getRaidAnchorObj()
-            if anchorObj then
-                if Options.OPFarm.Value then
-                    -- OP Farm: อยู่บนฟ้าอยู่แล้ว แค่หยุดรอเพื่อไม่ให้ยิงอะไรผิดพลาด
-                    task.wait(0.5)
-                else
-                    -- Safe Farm: บินไปโฟกัสที่ Anchor และค้างอยู่จนกว่ามันจะหายไป
-                    stealthFlyTo(anchorPos)
-                    while isFlying do task.wait(0.05) end
-                end
-                continue -- ข้ามการทำงานอื่นๆ แล้ววนลูปไปเช็คใหม่ว่า Anchor หายไปรึยัง
-            end
-        end
-        -- ==========================================
-
-        if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
+            local anchorPos = isRaidMap and getRaidAnchorPos()
+            
             if not opFarmInitialized then
-                savedHoverY = OP_FLY_HEIGHT + math.random(-5, 5)
+                -- ถ้ามี Anchor ให้ลอยเหนือ Anchor ถ้าไม่มีก็ลอยตามค่า OP_FLY_HEIGHT ปกติ
+                savedHoverY = (anchorPos and (anchorPos.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
                 RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
                 opFarmInitialized = true
             end
@@ -566,14 +580,32 @@ spawn(function()
                 continue 
             end
 
-            if currentBossTarget then
+            if anchorPos then
+                -- [โฟกัส Anchor] ค่อยๆ เคลื่อนที่ไปลอยเหนือ Anchor แบบนุ่มนวล
+                local hoverGoal = anchorPos + Vector3.new(0, FLY_OFFSET, 0)
+                local dir = (hoverGoal - RootPart.Position)
+                if dir.Magnitude > 15 then
+                    RootPart.AssemblyLinearVelocity = dir.Unit * 150
+                end
                 
-                executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                -- ตีไททันที่เดินเข้ามาใกล้ๆ Anchor เท่านั้น
+                local limit = Options.TargetLimit.Value 
+                local radius = Options.AoERadius.Value
+                local nearbyTargets = getTargetsNearAnchor(limit, radius)
+                
+                if #nearbyTargets > 0 then
+                    if canKill then executeStealthSlash(nearbyTargets, true) end
+                end
             else
-                local allTargets = getAllTargets()
-                local limitedTargets = {}; for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
-                if #limitedTargets > 0 then
-                    if canKill then executeStealthSlash(limitedTargets, true) end
+                -- [Anchor หายแล้ว] ออกจากโหมดค้างบน Anchor ทำตามปกติ (ฟาร์มบอส/ฟาร์มปกติ)
+                if currentBossTarget then
+                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                else
+                    local allTargets = getAllTargets()
+                    local limitedTargets = {}; for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
+                    if #limitedTargets > 0 then
+                        if canKill then executeStealthSlash(limitedTargets, true) end
+                    end
                 end
             end
             task.wait(1); continue 
@@ -581,7 +613,6 @@ spawn(function()
 
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
-            -- [แก้ไข] ปล่อย PlatformStand ทันทีเมื่อเข้า Safe Mode
             Humanoid.PlatformStand = false 
             
             if isBladeEmpty() then 
@@ -591,6 +622,32 @@ spawn(function()
             
             savedHoverY = nil
             
+            -- [โฟกัส Anchor] สำหรับ Safe Farm
+            if isRaidMap then
+                local anchorPos = getRaidAnchorPos()
+                if anchorPos then
+                    -- ถ้าตัวเองอยู่ไกลเกินไป ให้บินกลับไปลอยเหนือ Anchor
+                    if (RootPart.Position - anchorPos).Magnitude > 40 then
+                        stealthFlyTo(anchorPos)
+                        while isFlying do task.wait(0.05) end
+                    end
+                    
+                    -- ตีไททันที่เดินเข้ามาใกล้ๆ Anchor เท่านั้น
+                    local limit = Options.TargetLimit.Value 
+                    local radius = Options.AoERadius.Value
+                    local nearbyTargets = getTargetsNearAnchor(limit, radius)
+                    
+                    if #nearbyTargets > 0 then
+                        if canKill then executeStealthSlash(nearbyTargets, false) end
+                        task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
+                    else
+                        task.wait(0.5)
+                    end
+                    continue -- ข้ามโค้ดด้านล่าง วนลูปมาเช็ค Anchor ใหม่
+                end
+            end
+            
+            -- [ทำงานปกติเมื่อ Anchor หายไปแล้ว]
             if currentBossTarget then
                 stealthFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
@@ -607,8 +664,6 @@ spawn(function()
                 else task.wait(0.5) end
             end
         end
-    end
-end)
 
 spawn(function()
     while task.wait(0.1) do
