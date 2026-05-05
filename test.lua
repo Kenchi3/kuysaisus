@@ -103,6 +103,30 @@ local function getRaidAnchorPos()
     return nil
 end
 
+-- [เพิ่มเติม] ฟังก์ชันสำหรับดึง Object ตัวจริงมาเช็คว่ายังมีชีวิตอยู่ไหม
+local function getRaidAnchorObj()
+    local unclimbable = workspace:FindFirstChild("Unclimbable")
+    if not unclimbable then return nil, nil end
+    if PlaceId == 14012874501 then
+        local background = unclimbable:FindFirstChild("Background")
+        if background then 
+            local npc = background:FindFirstChild("Attack_Titan") 
+            if npc then 
+                return npc, (npc:IsA("Model") and npc:GetPivot().Position or npc.Position)
+            end 
+        end
+    elseif PlaceId == 13379349730 then
+        local objective = unclimbable:FindFirstChild("Objective")
+        if objective then 
+            local boat = objective:FindFirstChild("Boat1") 
+            if boat then 
+                return boat, (boat:IsA("Model") and boat:GetPivot().Position or boat.Position)
+            end 
+        end
+    end
+    return nil, nil
+end
+
 -- ==========================================
 -- [ 3. ฟังก์ชันระบบทำงาน (Stealth Version) ]
 -- ==========================================
