@@ -46,7 +46,7 @@ local TitansFolder = Workspace:FindFirstChild("Titans")
 local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
 
 local PlaceId = game.PlaceId
-local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
+local isRaidMap = workspace:GetAttribute("Type") == "Raid"
 local RaidBossWeakPoints = {} 
 
 local farmingStarted = false
@@ -90,6 +90,9 @@ local UPGRADE_STATS = {
     Spears = { "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius", "TS_Speed", "TS_Control", "TS_Range", "TS_Gas" }
 }
 
+-- ==========================================
+-- [ ระบบตรวจสอบ Phase และ Anchor ]
+-- ==========================================
 local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
     if not unclimbable then return nil end
@@ -103,27 +106,30 @@ local function getRaidAnchorPos()
     return nil
 end
 
-local function getRaidAnchorObj()
-    local unclimbable = workspace:FindFirstChild("Unclimbable")
-    if not unclimbable then return nil, nil end
+local function isAnchorPhaseActive()
+    if not isRaidMap then return false end
+    
     if PlaceId == 14012874501 then
-        local background = unclimbable:FindFirstChild("Background")
-        if background then 
-            local npc = background:FindFirstChild("Attack_Titan") 
-            if npc then 
-                return npc, (npc:IsA("Model") and npc:GetPivot().Position or npc.Position)
-            end 
+        -- Attack Titan Map: ตรวจจากการมีอยู่ของ Object
+        local unclimbable = workspace:FindFirstChild("Unclimbable")
+        if unclimbable and unclimbable:FindFirstChild("Background") then
+            return unclimbable.Background:FindFirstChild("Attack_Titan") ~= nil
         end
+        return false
+        
     elseif PlaceId == 13379349730 then
-        local objective = unclimbable:FindFirstChild("Objective")
-        if objective then 
-            local boat = objective:FindFirstChild("Boat1") 
-            if boat then 
-                return boat, (boat:IsA("Model") and boat:GetPivot().Position or boat.Position)
-            end 
+        -- Armored Titan Map: ตรวจจาก Attribute "Phase"
+        local unclimbable = workspace:FindFirstChild("Unclimbable")
+        if unclimbable and unclimbable:FindFirstChild("Objective") then
+            local bossObj = unclimbable.Objective:FindFirstChild("Armored_Boss")
+            if bossObj then
+                return bossObj:GetAttribute("Phase") == 1
+            end
         end
+        return false
     end
-    return nil, nil
+    
+    return false
 end
 
 -- ==========================================
@@ -239,7 +245,6 @@ local function getAvailableBossWeakPoint()
             end
         end
     end
-    
     return nil
 end
 
@@ -350,14 +355,12 @@ end
 
 local function executeBossBurst(bossPart, burstAmount)
     if not bossPart then return false end
-    
     for i = 1, burstAmount do
         task.spawn(function()
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
             pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         end)
     end
-    
     return true
 end
 
@@ -415,7 +418,7 @@ Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Ma
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
-Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 500, Rounding = 0 })
+Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
@@ -542,7 +545,7 @@ spawn(function()
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
-            local anchorPos = isRaidMap and getRaidAnchorPos()
+            local anchorPos = getRaidAnchorPos()
             
             if not opFarmInitialized then
                 savedHoverY = (anchorPos and (anchorPos.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
@@ -556,7 +559,8 @@ spawn(function()
                 continue 
             end
 
-            if anchorPos then
+            -- [เช็ค Phase ก่อนเข้าโหมดกันเรือ]
+            if isAnchorPhaseActive() and anchorPos then
                 local hoverGoal = anchorPos + Vector3.new(0, FLY_OFFSET, 0)
                 local dir = (hoverGoal - RootPart.Position)
                 if dir.Magnitude > 15 then
@@ -571,6 +575,7 @@ spawn(function()
                     if canKill then executeStealthSlash(nearbyTargets, true) end
                 end
             else
+                -- [Phase 2 หรือไม่มี Anchor] ทำตามปกติ
                 if currentBossTarget then
                     executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
                 else
@@ -595,7 +600,8 @@ spawn(function()
             
             savedHoverY = nil
             
-            if isRaidMap then
+            -- [เช็ค Phase ก่อนเข้าโหมดกันเรือ]
+            if isAnchorPhaseActive() then
                 local anchorPos = getRaidAnchorPos()
                 if anchorPos then
                     if (RootPart.Position - anchorPos).Magnitude > 40 then
@@ -617,6 +623,7 @@ spawn(function()
                 end
             end
             
+            -- [Phase 2 หรือไม่มี Anchor] ทำตามปกติ
             if currentBossTarget then
                 stealthFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
