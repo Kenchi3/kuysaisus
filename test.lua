@@ -195,10 +195,32 @@ end
 
 local function getAvailableBossWeakPoint()
     if not Options.BossBurst.Value then return nil end
-    for bossName, weakPoint in pairs(RaidBossWeakPoints) do
-        if weakPoint and weakPoint:IsA("BasePart") and weakPoint.Parent then return weakPoint
-        else RaidBossWeakPoints[bossName] = nil end
+    local raidBossNames = {"Attack_Titan", "Armored_Titan"}
+    
+    for _, bossName in ipairs(raidBossNames) do
+        -- 1. ถ้ามีจุดอ่อน (Marker) ให้ยิงที่จุดอ่อนก่อน
+        if RaidBossWeakPoints[bossName] and RaidBossWeakPoints[bossName].Parent then
+            return RaidBossWeakPoints[bossName]
+        end
+        
+        -- 2. ถ้าไม่มีจุดอ่อน ให้ลงไปหา Nape ของบอสตัวนั้นโดยตรง
+        local bossModel = TitansFolder and TitansFolder:FindFirstChild(bossName)
+        if bossModel and bossModel:IsA("Model") then
+            local hum = bossModel:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local hb = bossModel:FindFirstChild("Hitboxes")
+                if hb then
+                    local hf = hb:FindFirstChild("Hit")
+                    if hf then
+                        -- ค้นหา Nape ใน Hitboxes
+                        local nape = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart")
+                        if nape then return nape end
+                    end
+                end
+            end
+        end
     end
+    
     return nil
 end
 
