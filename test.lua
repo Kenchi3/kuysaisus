@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "Hybrid Time Guard",
+    SubTitle = "Stealth Hybrid Guard",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -32,7 +32,7 @@ local Workspace = game:GetService("Workspace")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService") -- สำหรับ JSON
+local HttpService = game:GetService("HttpService")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -49,7 +49,6 @@ local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
 
--- 🔥 [Variables]
 local farmingStarted = false
 local fallbackStartTime = 0
 local LAST_TITAN_THRESHOLD = 5 
@@ -63,13 +62,11 @@ local OP_MAX_TARGETS = 3
 local antiGravityConn = nil
 local savedHoverY = nil
 
--- [ระบบบันทึก Run Count ลงไฟล์]
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
 local function saveRunCount()
     if not isfolder("NonnyHub") then makefolder("NonnyHub") end
     if not isfolder("NonnyHub/game") then makefolder("NonnyHub/game") end
-    
     pcall(function()
         local data = { count = runCounter }
         writefile(runCountFile, HttpService:JSONEncode(data))
@@ -81,27 +78,16 @@ local function loadRunCount()
         if isfile(runCountFile) then
             local rawData = readfile(runCountFile)
             local data = HttpService:JSONDecode(rawData)
-            if data and type(data.count) == "number" then
-                runCounter = data.count
-                print("Loaded Run Count: " .. runCounter)
-            end
+            if data and type(data.count) == "number" then runCounter = data.count end
         end
     end)
 end
 
--- โหลดค่า Run Count ทันทีที่เริ่มสคริปต์
 loadRunCount()
 
--- [ข้อมูล Stats สำหรับ Auto Upgrade]
 local UPGRADE_STATS = {
-    Blades = {
-        "ODM_Damage", "Crit_Damage", "Crit_Chance", "Blade_Durability",
-        "ODM_Speed", "ODM_Control", "ODM_Range", "ODM_Gas"
-    },
-    Spears = {
-        "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius",
-        "TS_Speed", "TS_Control", "TS_Range", "TS_Gas"
-    }
+    Blades = { "ODM_Damage", "Crit_Damage", "Crit_Chance", "Blade_Durability", "ODM_Speed", "ODM_Control", "ODM_Range", "ODM_Gas" },
+    Spears = { "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius", "TS_Speed", "TS_Control", "TS_Range", "TS_Gas" }
 }
 
 local function getRaidAnchorPos()
@@ -109,48 +95,30 @@ local function getRaidAnchorPos()
     if not unclimbable then return nil end
     if PlaceId == 14012874501 then
         local background = unclimbable:FindFirstChild("Background")
-        if background then
-            local npc = background:FindFirstChild("Attack_Titan")
-            if npc then
-                if npc:IsA("Model") then return npc:GetPivot().Position
-                elseif npc:IsA("BasePart") then return npc.Position end
-            end
-        end
+        if background then local npc = background:FindFirstChild("Attack_Titan"); if npc then return npc:IsA("Model") and npc:GetPivot().Position or npc.Position end end
     elseif PlaceId == 13379349730 then
         local objective = unclimbable:FindFirstChild("Objective")
-        if objective then
-            local boat = objective:FindFirstChild("Boat1")
-            if boat then
-                if boat:IsA("Model") then return boat:GetPivot().Position
-                elseif boat:IsA("BasePart") then return boat.Position end
-            end
-        end
+        if objective then local boat = objective:FindFirstChild("Boat1"); if boat then return boat:IsA("Model") and boat:GetPivot().Position or boat.Position end end
     end
     return nil
 end
 
 -- ==========================================
--- [ 3. ฟังก์ชันระบบทำงาน ]
+-- [ 3. ฟังก์ชันระบบทำงาน (Stealth Version) ]
 -- ==========================================
 local FLY_OFFSET = 100
 local FLY_SPEED = 300
-local JITTER_AMOUNT = 2 
 local isFlying = false
 local NoclipConnection = nil
 local flightConnection = nil 
 
-local function humanizedFlyTo(targetPos)
+-- [เปลี่ยนแปลง 1: Stealth Flight - ใช้ Velocity แทน CFrame วาร์ป]
+local function stealthFlyTo(targetPos)
     if not RootPart or isFlying then return end 
     isFlying = true
-    RootPart.Anchored = false
     Humanoid.PlatformStand = true
-    RootPart.AssemblyLinearVelocity = Vector3.zero
     
-    local goalPos = targetPos + Vector3.new(
-        math.random(-5, 5), 
-        FLY_OFFSET + math.random(-2, 2), 
-        math.random(-5, 5)
-    )
+    local goalPos = targetPos + Vector3.new(math.random(-5, 5), FLY_OFFSET + math.random(-2, 2), math.random(-5, 5))
 
     if flightConnection then flightConnection:Disconnect() end
     
@@ -162,21 +130,21 @@ local function humanizedFlyTo(targetPos)
         
         if distance < 5 then
             isFlying = false
-            RootPart.AssemblyLinearVelocity = Vector3.zero
+            -- ลด Velocity ลงแบบมนุษย์ ไม่ได้รีเซ็ตเป็น 0 ทันที
+            RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.1
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             return
         end
 
-        local moveStep = direction.Unit * (FLY_SPEED * dt)
+        -- คำนวณความเร็วตามระยะทาง (เบรคตอนใกล้ถึง)
+        local speedFactor = math.clamp(distance / 20, 0.5, 1)
+        local targetVelocity = direction.Unit * (FLY_SPEED * speedFactor)
         
-        local jitter = Vector3.new(
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2,
-            math.random() * JITTER_AMOUNT - JITTER_AMOUNT/2
-        )
+        -- ปรับ Velocity ไปหาเป้าหมาย แทนการย้าย CFrame
+        RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.2)
         
-        RootPart.CFrame = CFrame.new(RootPart.Position + moveStep + jitter, goalPos)
-        RootPart.AssemblyLinearVelocity = Vector3.zero
+        -- หันหน้าไปที่เป้าหมาย (ส่งผลต่อการ Register Hit ฝั่งเซิร์ฟเวอร์)
+        RootPart.CFrame = CFrame.lookAt(RootPart.Position, Vector3.new(goalPos.X, RootPart.Position.Y, goalPos.Z))
     end)
 end
 
@@ -189,21 +157,13 @@ end
 
 local function hasSpareBlades()
     local rig = Character:FindFirstChild("Rig_" .. Player.Name)
-    if rig then
-        for i = 1, 3 do
-            local spare = rig:FindFirstChild("Left_" .. i, true)
-            if spare and spare:GetAttribute("Used") == nil then return true end
-        end
-    end
+    if rig then for i = 1, 3 do local spare = rig:FindFirstChild("Left_" .. i, true); if spare and spare:GetAttribute("Used") == nil then return true end end end
     return false
 end
 
 local function isBladeEmpty()
     local rig = Character:FindFirstChild("Rig_" .. Player.Name)
-    if rig and rig:FindFirstChild("LeftHand") then
-        local blade = rig.LeftHand:FindFirstChild("Blade_1")
-        if not blade or blade.Transparency == 1 then return true end
-    end
+    if rig and rig:FindFirstChild("LeftHand") then local blade = rig.LeftHand:FindFirstChild("Blade_1"); if not blade or blade.Transparency == 1 then return true end end
     return false
 end
 
@@ -213,15 +173,8 @@ local REFILL_COOLDOWN = 2.5
 local function safeRefillBlades()
     if tick() - lastRefillAttempt < REFILL_COOLDOWN then return end
     lastRefillAttempt = tick()
-    
-    if hasSpareBlades() then 
-        pcall(function() GET:InvokeServer("Blades", "Reload") end)
-    else 
-        local s = findNearestStation()
-        if s then 
-            pcall(function() POST:FireServer("Attacks", "Reload", s) end) 
-        end 
-    end
+    if hasSpareBlades() then pcall(function() GET:InvokeServer("Blades", "Reload") end)
+    else local s = findNearestStation(); if s then pcall(function() POST:FireServer("Attacks", "Reload", s) end) end end
 end
 
 local function trackBossWeakPoint(bossModel)
@@ -236,39 +189,22 @@ end
 
 local function monitorRaidBosses()
     if not isRaidMap then return end
-    task.spawn(function()
-        local s, a = pcall(function() return TitansFolder:WaitForChild("Attack_Titan", 300) end)
-        if s and a then trackBossWeakPoint(a) end
-    end)
-    task.spawn(function()
-        local s, a = pcall(function() return TitansFolder:WaitForChild("Armored_Titan", 300) end)
-        if s and a then trackBossWeakPoint(a) end
-    end)
+    task.spawn(function() local s, a = pcall(function() return TitansFolder:WaitForChild("Attack_Titan", 300) end); if s and a then trackBossWeakPoint(a) end end)
+    task.spawn(function() local s, a = pcall(function() return TitansFolder:WaitForChild("Armored_Titan", 300) end); if s and a then trackBossWeakPoint(a) end end)
 end
 
 local function getAvailableBossWeakPoint()
     if not Options.BossBurst.Value then return nil end
     for bossName, weakPoint in pairs(RaidBossWeakPoints) do
-        if weakPoint and weakPoint:IsA("BasePart") and weakPoint.Parent then
-            return weakPoint
-        else
-            RaidBossWeakPoints[bossName] = nil
-        end
+        if weakPoint and weakPoint:IsA("BasePart") and weakPoint.Parent then return weakPoint
+        else RaidBossWeakPoints[bossName] = nil end
     end
     return nil
 end
 
 local function getAliveTitanCount()
-    local count = 0
-    if not TitansFolder then return 0 end
-    for _, titan in ipairs(TitansFolder:GetChildren()) do
-        if titan:IsA("Model") then
-            local hum = titan:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                count = count + 1
-            end
-        end
-    end
+    local count = 0; if not TitansFolder then return 0 end
+    for _, titan in ipairs(TitansFolder:GetChildren()) do if titan:IsA("Model") then local hum = titan:FindFirstChildOfClass("Humanoid"); if hum and hum.Health > 0 then count = count + 1 end end end
     return count
 end
 
@@ -276,34 +212,17 @@ local function getTargetCluster(maxCount, radius)
     local closestPart, minDistance, anchorPosition = nil, math.huge, RootPart.Position
     if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPosition = p end end
     if not TitansFolder then return {}, nil end
-    
     for _, titan in ipairs(TitansFolder:GetChildren()) do
         if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            local tp = nil
-            if RaidBossWeakPoints[titan.Name] then 
-                tp = RaidBossWeakPoints[titan.Name]
-            else 
-                local h = titan.Hitboxes:FindFirstChild("Hit"); 
-                if h then tp = h:FindFirstChild("Nape") end 
-            end
-            
+            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
             if tp then local d = (anchorPosition - tp.Position).Magnitude; if d < minDistance then minDistance = d; closestPart = tp end end
         end
     end
-    
     if not closestPart then return {}, nil end
     local t, lim = {}, {}
-    
     for _, titan in ipairs(TitansFolder:GetChildren()) do
         if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            local tp = nil
-            if RaidBossWeakPoints[titan.Name] then 
-                tp = RaidBossWeakPoints[titan.Name]
-            else 
-                local h = titan.Hitboxes:FindFirstChild("Hit"); 
-                if h then tp = h:FindFirstChild("Nape") end 
-            end
-            
+            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
             if tp and (tp.Position - closestPart.Position).Magnitude <= radius then table.insert(t, tp) end
         end
     end
@@ -313,17 +232,11 @@ local function getTargetCluster(maxCount, radius)
 end
 
 local function getAllTargets()
-    local targets = {}
-    if not TitansFolder then return targets end
+    local targets = {}; if not TitansFolder then return targets end
     for _, titan in ipairs(TitansFolder:GetChildren()) do
         if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 then
-            local tp = nil
-            if RaidBossWeakPoints[titan.Name] then 
-                tp = RaidBossWeakPoints[titan.Name]
-            else
-                local hb = titan:FindFirstChild("Hitboxes")
-                if hb then local hf = hb:FindFirstChild("Hit"); if hf then tp = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart") end end
-            end
+            local tp = RaidBossWeakPoints[titan.Name]
+            if not tp then local hb = titan:FindFirstChild("Hitboxes"); if hb then local hf = hb:FindFirstChild("Hit"); if hf then tp = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart") end end end
             if tp then table.insert(targets, tp) end
         end
     end
@@ -339,38 +252,31 @@ local function performSimulatedClick(x, y)
     end)
 end
 
-local function executeMultiSlash(napesArray)
+-- [เปลี่ยนแปลง 2: Stealth Multi-Slash - หน่วงเวลาการยิง Register แบบมนุษย์]
+local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
-    local mainTarget = napesArray[1]
-    if mainTarget and mainTarget.Parent then
-        pcall(function()
-            workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, mainTarget.Position)
-        end)
-        task.wait(math.random(50, 100) / 1000)
+    
+    if not isOP then
+        local mainTarget = napesArray[1]
+        if mainTarget and mainTarget.Parent then
+            pcall(function() workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, mainTarget.Position) end)
+            task.wait(math.random(50, 100) / 1000)
+        end
     end
 
-    POST:FireServer("Attacks", "Slash", true)
-    if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
+    pcall(function() POST:FireServer("Attacks", "Slash", true) end)
+    
+    if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value and not isOP then
         task.wait(math.random(50, 100) / 1000)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
     end
     
-    for _, napePart in ipairs(napesArray) do
+    -- ยิง Register แบบหน่วงเวลานิดหน่อย (แทนการยิงพร้อมกันทั้งก้อนใน 1 วินาที)
+    for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
-            end)
-        end
-    end
-    return true
-end
-
-local function executeOPSlash(napesArray)
-    if not napesArray or #napesArray == 0 then return false end
-    POST:FireServer("Attacks", "Slash", true)
-    for _, napePart in ipairs(napesArray) do
-        if napePart and napePart.Parent then
-            task.spawn(function()
+                -- หน่วงเวลาแบบสุ่มระหว่าง 0.01 - 0.05 วินาที เพื่อให้ดูเหมือน Swing ของดาบที่ผ่านร่างต่อเนื่อง
+                task.wait(math.random(1, 5) / 100)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
@@ -414,271 +320,124 @@ end
 local function isRaidCompleted()
     local inf = Player.PlayerGui:FindFirstChild("Interface"); if not inf then return false end
     local c, r = inf:FindFirstChild("Chests"), inf:FindFirstChild("Rewards")
-    if c and c.Visible then return true end
-    if r and r.Visible then return true end
-    return false
+    if c and c.Visible then return true end; if r and r.Visible then return true end; return false
 end
 
 local function joinBoostedMission()
-    local MissionCreated = false
     local boostedMap = Workspace:GetAttribute("Boosted_Map")
-    if not boostedMap then
-        Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3})
-        return false
-    end
-
+    if not boostedMap then Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3}); return false end
     local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
-    if table.find(raidMaps, boostedMap) then
-        Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3})
-        return false
-    end
-
-    Library:Notify({Title="Boosted Map", Content="Attempting to join: " .. boostedMap, Duration=3})
-
+    if table.find(raidMaps, boostedMap) then Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3}); return false end
     local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
-
     for _, diff in ipairs(difficulties) do
-        local mapData = {
-            Name = boostedMap,
-            Difficulty = diff,
-            Type = "Missions",
-            Objective = "Skirmish"
-        }
-
-        local success, result = pcall(function()
-            return GET:InvokeServer("S_Missions", "Create", mapData)
-        end)
-
-        if success and result then
-            MissionCreated = true
-        end
-
-        if MissionCreated then
-            Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting...", Duration=3})
-            task.wait(1)
-            GET:InvokeServer("S_Missions", "Start")
-            return true
-        end
+        local success, result = pcall(function() return GET:InvokeServer("S_Missions", "Create", {Name = boostedMap, Difficulty = diff, Type = "Missions", Objective = "Skirmish"}) end)
+        if success and result then Library:Notify({Title="Success", Content="Created " .. diff .. " lobby!", Duration=3}); task.wait(1); GET:InvokeServer("S_Missions", "Start"); return true end
     end
-
-    Library:Notify({Title="Error", Content="Failed to create lobby (No valid difficulty).", Duration=3})
     return false
 end
 
 -- ==========================================
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
--- [Section: Auto Upgrade] -> ย้ายขึ้นมาบนสุดของ Main Tab เพื่อความสำคัญ
 Tabs.Main:CreateSection("Auto Upgrade")
-Tabs.Main:CreateToggle("AutoUpgrade", {
-    Title = "Auto Upgrade Equipment",
-    Default = false
-})
-
-Tabs.Main:CreateDropdown("UpgradeWeaponType", {
-    Title = "Weapon Type",
-    Values = {"Blades", "Spears", "Both"},
-    Default = 1
-})
+Tabs.Main:CreateToggle("AutoUpgrade", { Title = "Auto Upgrade Equipment", Default = false })
+Tabs.Main:CreateDropdown("UpgradeWeaponType", { Title = "Weapon Type", Values = {"Blades", "Spears", "Both"}, Default = 1 })
 
 Tabs.Main:CreateSection("Auto Farm (Safe)")
-Tabs.Main:CreateToggle("OPFarm", {
-    Title = "OP Farm (Sky Nuke)",
-    Description = "Risky!!",
-    Default = false
-})
+Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Description = "Risky but Stealthier now!", Default = false })
+Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false })
+Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 5, Default = 5, Rounding = 0 })
 
-Tabs.Main:CreateToggle("BossBurst", {
-    Title = "Raid Boss Burst",
-    Description = "Risky!!",
-    Default = false
-})
-
-Tabs.Main:CreateSlider("BurstAmount", {
-    Title = "Burst Hits Amount",
-    Min = 1, Max = 5, Default = 5, Rounding = 0
-})
-
-Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Description = "", Default = false })
+Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
-Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Description = "Recommended 3-5", Min = 1, Max = 10, Default = 5, Rounding = 0 })
+Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
-Tabs.Main:CreateToggle("UseMissionTimer", { 
-    Title = "Hybrid Time Guard", 
-    Description = "Stop farming until input time", 
-    Default = false 
-})
-
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
-
-local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
-    Title = "Timer Status",
-    Content = "Status: Idle"
-})
+Tabs.Main:CreateToggle("UseMissionTimer", { Title = "Hybrid Time Guard", Default = false })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true })
+local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", { Title = "Timer Status", Content = "Status: Idle" })
 
 Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
-
-local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", {
-    Title = "Run Progress",
-    Content = "Current: 0 / Max: 0"
-})
-
-Tabs.Main:CreateInput("MaxRuns", { 
-    Title = "Max Runs (0 = Infinite)", 
-    Default = "0", 
-    Numeric = true, 
-    Placeholder = "e.g. 10" 
-})
-
-Tabs.Main:CreateButton{
-    Title = "Shadow Ban Check",
-    Description = "Check if you are shadow banned.",
-    Callback = function()
-        local isExploiter = Player:GetAttribute("Exploiter")
-        if isExploiter then
-            Library:Notify({ Title = "Shadow Ban Status", Content = "⚠️ BANNED: You are Shadow Banned!", Duration = 5 })
-        else
-            Library:Notify({ Title = "Shadow Ban Status", Content = "✅ SAFE: You are not banned.", Duration = 5 })
-        end
-    end
-}
-
-Tabs.Main:CreateToggle("AutoJoinBoosted", {
-    Title = "Auto Join Boosted Mission",
-    Description = "Automatically joins boosted map when in lobby.",
-    Default = false
-})
+local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", { Title = "Run Progress", Content = "Current: 0 / Max: 0" })
+Tabs.Main:CreateInput("MaxRuns", { Title = "Max Runs (0 = Infinite)", Default = "0", Numeric = true })
+Tabs.Main:CreateButton{ Title = "Shadow Ban Check", Callback = function() Library:Notify({ Title = "Shadow Ban Status", Content = Player:GetAttribute("Exploiter") and "⚠️ BANNED" or "✅ SAFE", Duration = 5 }) end }
+Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission", Default = false })
 
 -- ==========================================
--- [ 5. Loop หลัก ]
+-- [ 5. Loop หลัก (Stealth Version) ]
 -- ==========================================
+-- ระบบจับเหตุการณ์ตาย/เกิดใหม่สะอาดขึ้น
+Humanoid.Died:Connect(function()
+    if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
+    if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
+    isFlying = false; opFarmInitialized = false; savedHoverY = nil; farmingStarted = false
+    Character = Player.CharacterAdded:Wait()
+    RootPart = Character:WaitForChild("HumanoidRootPart")
+    Humanoid = Character:WaitForChild("Humanoid")
+end)
+
 spawn(function()
     while task.wait(0.5) do
         local currentCount = runCounter
         local maxCount = tonumber(Options.MaxRuns.Value) or 0
-        
-        local statusText
-        if maxCount == 0 then
-            statusText = string.format("Current: %d / Max: ∞ (Infinite)", currentCount)
-        else
-            statusText = string.format("Current: %d / Max: %d", currentCount, maxCount)
-        end
-        
-        RunDisplay:SetContent(statusText)
+        RunDisplay:SetContent(maxCount == 0 and string.format("Current: %d / Max: ∞", currentCount) or string.format("Current: %d / Max: %d", currentCount, maxCount))
     end
 end)
 
--- [Loop สำหรับระบบ Lobby: Reset, Upgrade, Join Mission]
 spawn(function()
     while task.wait(2) do
         local isLobby = Workspace:GetAttribute("Map") == "Lobby"
-        
         if isLobby then
-            -- 1. Reset Run Count
-            if runCounter ~= 0 then
-                runCounter = 0
-                saveRunCount()
-                Library:Notify({Title="Lobby Detected", Content="Run Count Reset to 0", Duration=2})
-            end
-            
-            -- 2. Auto Upgrade (Priority: ทำจนเสร็จก่อน)
+            if runCounter ~= 0 then runCounter = 0; saveRunCount() end
             if Options.AutoUpgrade.Value then
-                Library:Notify({Title="Auto Upgrade", Content="Starting upgrade sequence...", Duration=3})
-                
-                local selectedType = Options.UpgradeWeaponType.Value
-                local statsList = {}
-                
-                if selectedType == "Blades" or selectedType == "Both" then
-                    for _, stat in pairs(UPGRADE_STATS.Blades) do table.insert(statsList, stat) end
-                end
-                if selectedType == "Spears" or selectedType == "Both" then
-                    for _, stat in pairs(UPGRADE_STATS.Spears) do table.insert(statsList, stat) end
-                end
-
+                local selectedType = Options.UpgradeWeaponType.Value; local statsList = {}
+                if selectedType == "Blades" or selectedType == "Both" then for _, stat in pairs(UPGRADE_STATS.Blades) do table.insert(statsList, stat) end end
+                if selectedType == "Spears" or selectedType == "Both" then for _, stat in pairs(UPGRADE_STATS.Spears) do table.insert(statsList, stat) end end
                 local upgrading = true
                 while upgrading do
                     local successCount = 0
                     for _, statName in pairs(statsList) do
-                        local success, result = pcall(function()
-                            return GET:InvokeServer("S_Equipment", "Upgrade", {statName})
-                        end)
-                        
-                        if success and result then
-                            successCount = successCount + 1
-                            Library:Notify({Title="Upgraded!", Content=statName, Duration=1})
-                            task.wait(0.3)
-                        else
-                            task.wait(0.1)
-                        end
+                        local success, result = pcall(function() return GET:InvokeServer("S_Equipment", "Upgrade", {statName}) end)
+                        if success and result then successCount = successCount + 1; task.wait(0.3) else task.wait(0.1) end
                     end
-                    
-                    if successCount == 0 then
-                        upgrading = false
-                        Library:Notify({Title="Upgrade Done", Content="Maxed or No Money.", Duration=3})
-                    end
-                    task.wait(1)
+                    if successCount == 0 then upgrading = false end; task.wait(1)
                 end
             end
-            
-            -- 3. Auto Join Mission (ทำหลัง Upgrade เสร็จ)
-            if Options.AutoJoinBoosted.Value then
-                if tick() - lastJoinAttempt > 5 then
-                    lastJoinAttempt = tick()
-                    joinBoostedMission()
-                end
-            end
+            if Options.AutoJoinBoosted.Value and tick() - lastJoinAttempt > 5 then lastJoinAttempt = tick(); joinBoostedMission() end
         end
     end
 end)
 
-spawn(function()
-    spawn(monitorRaidBosses)
-    
-    while task.wait(0.1) do
-        if Humanoid.Health <= 0 then
-            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-            if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
-            isFlying = false; opFarmInitialized = false; savedHoverY = nil
-            
-            farmingStarted = false
-            
-            Character = Player.Character or Player.CharacterAdded:Wait()
-            RootPart = Character:WaitForChild("HumanoidRootPart")
-            Humanoid = Character:WaitForChild("Humanoid")
-            task.wait(2)
-            continue
-        end
+spawn(monitorRaidBosses)
 
+spawn(function()
+    while task.wait(0.1) do
         if not Options.Autofarm.Value and not Options.OPFarm.Value then 
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
-            isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false
-            
-            farmingStarted = false
-            
-            if NoclipConnection then
-                NoclipConnection:Disconnect()
-                NoclipConnection = nil
-                if Character then
-                    for _, p in pairs(Character:GetDescendants()) do
-                        if p:IsA("BasePart") then p.CanCollide = true end
-                    end
-                end
+            isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false; farmingStarted = false
+            if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil
+                if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
             end
             continue 
         end
 
+        -- [เปลี่ยนแปลง 3: Anti-Gravity แบบลูกผสม Velocity ไม่ใช่กดยึด CFrame ตลอด]
         if not antiGravityConn then
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
-                    RootPart.AssemblyLinearVelocity = Vector3.zero
+                    -- ยกเลิกการรีเซ็ต Velocity เป็น 0 แบบเดิม แต่เปลี่ยนเป็นการดันตัวเองให้ลอยขึ้นช้าๆ แทน
                     if savedHoverY and not isFlying then
-                        RootPart.CFrame = CFrame.new(RootPart.CFrame.X, savedHoverY, RootPart.CFrame.Z)
+                        local diff = savedHoverY - RootPart.Position.Y
+                        -- ถ้าต่ำกว่าจุดลอย ให้ดันขึ้น ถ้าสูงกว่า ให้ดันลง (เกลี่ยแรง)
+                        RootPart.AssemblyLinearVelocity = Vector3.new(0, diff * 5, 0)
+                    else
+                        -- ลดแรงดึงดูดลง (ชะลอการตก)
+                        RootPart.AssemblyLinearVelocity = Vector3.new(0, math.clamp(RootPart.AssemblyLinearVelocity.Y, -5, 100), 0)
                     end
                 end
             end)
@@ -696,13 +455,12 @@ spawn(function()
             end
         end
 
+        -- [เปลี่ยนแปลง 4: Noclip แบบประหยัด ไม่สแปม Stepped หนักๆ]
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
                 if Character and (Options.Autofarm.Value or Options.OPFarm.Value) then
                     for _, p in pairs(Character:GetDescendants()) do
-                        if p:IsA("BasePart") and p ~= RootPart then 
-                            p.CanCollide = false 
-                        end
+                        if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
                     end
                 end
             end)
@@ -710,66 +468,31 @@ spawn(function()
 
         local currentBossTarget = getAvailableBossWeakPoint()
         local aliveCount = getAliveTitanCount()
-
         local isLastPhase = aliveCount <= LAST_TITAN_THRESHOLD
         local canKill = true
 
         if Options.UseMissionTimer.Value and isLastPhase then
             local minTime = tonumber(Options.MinMissionTime.Value) or 60
-            
-            if not farmingStarted then
-                farmingStarted = true
-                fallbackStartTime = tick()
-            end
-
-            local gameTime = Workspace:GetAttribute("Seconds")
-            if not gameTime then gameTime = tick() - fallbackStartTime end
-            
-            if gameTime < minTime then
-                canKill = false
-            else
-                canKill = true
-            end
-        else
-            canKill = true
+            if not farmingStarted then farmingStarted = true; fallbackStartTime = tick() end
+            local gameTime = Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)
+            canKill = gameTime >= minTime
         end
 
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
+            -- [เปลี่ยนแปลง 5: OP Farm ลอยแบบ Velocity ไม่ใช้ Anchor]
             if not opFarmInitialized then
-                if RootPart.Position.Y < (OP_FLY_HEIGHT - 10) then
-                    Humanoid.PlatformStand = true
-                    RootPart.Anchored = true 
-                    
-                    local targetPos = CFrame.new(RootPart.Position.X, OP_FLY_HEIGHT, RootPart.Position.Z)
-                    local distance = math.abs(OP_FLY_HEIGHT - RootPart.Position.Y)
-                    local duration = math.clamp(distance / 150, 1, 5)
-                    
-                    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-                    local tween = TweenService:Create(RootPart, tweenInfo, {CFrame = targetPos})
-                    
-                    tween:Play()
-                    tween.Completed:Wait()
-                end
-                
-                RootPart.Anchored = true
-                RootPart.AssemblyLinearVelocity = Vector3.zero
+                savedHoverY = OP_FLY_HEIGHT + math.random(-5, 5)
+                RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0) -- ดันตัวเองขึ้นไปบนแบบรวดเร็ว
                 opFarmInitialized = true
             end
             
             if isBladeEmpty() then 
-                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end
-                RootPart.Anchored = false 
-                safeRefillBlades() 
+                safeRefillBlades()
                 task.wait(1) 
                 continue 
-            end
-
-            if savedHoverY then 
-                RootPart.Anchored = true
-                savedHoverY = nil 
             end
 
             if currentBossTarget then
@@ -777,21 +500,12 @@ spawn(function()
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
                 local allTargets = getAllTargets()
-                local limitedTargets = {}
-                for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
-
+                local limitedTargets = {}; for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
                 if #limitedTargets > 0 then
-                    if canKill then
-                        performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
-                        executeOPSlash(limitedTargets) 
-                    else
-                        task.wait(1) 
-                    end
+                    if canKill then performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15)); executeStealthSlash(limitedTargets, true) end
                 end
             end
-            
-            task.wait(1)
-            continue 
+            task.wait(1); continue 
         end
 
         if Options.Autofarm.Value then
@@ -799,36 +513,24 @@ spawn(function()
             
             if isBladeEmpty() then 
                 if not savedHoverY then savedHoverY = RootPart.CFrame.Y end 
-                safeRefillBlades()
-                task.wait(1)
-                continue
+                safeRefillBlades(); task.wait(1); continue
             end
             
-            if savedHoverY then savedHoverY = nil end 
+            savedHoverY = nil
             
             if currentBossTarget then
-                humanizedFlyTo(currentBossTarget.Position)
+                stealthFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
-                
-                if canKill then
-                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
-                end
+                if canKill then executeBossBurst(currentBossTarget, Options.BurstAmount.Value) end
                 task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
             else
-                local limit = Options.TargetLimit.Value
-                local radius = Options.AoERadius.Value
-                local baseDelay = Options.SlashDelay.Value
-                
+                local limit = Options.TargetLimit.Value; local radius = Options.AoERadius.Value
                 local targets, anchorPos = getTargetCluster(limit, radius)
-
                 if #targets > 0 and anchorPos then
-                    humanizedFlyTo(anchorPos)
+                    stealthFlyTo(anchorPos)
                     while isFlying do task.wait(0.05) end
-                    
-                    if canKill then
-                        executeMultiSlash(targets)
-                    end
-                    task.wait(math.max(0.1, baseDelay + math.random(-0.1, 0.2)))
+                    if canKill then executeStealthSlash(targets, false) end
+                    task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
             end
         end
@@ -839,27 +541,10 @@ spawn(function()
     while task.wait(0.1) do
         if Options.UseMissionTimer.Value then
             local minTime = tonumber(Options.MinMissionTime.Value) or 60
-            local gameTime = Workspace:GetAttribute("Seconds")
-            
-            if not gameTime then
-                 if not farmingStarted then fallbackStartTime = tick() end
-                 gameTime = tick() - fallbackStartTime
-            end
-            
+            local gameTime = Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)
             local remaining = minTime - gameTime
-            
-            if remaining > 0 then
-                local minutes = math.floor(remaining / 60)
-                local seconds = math.floor(remaining % 60)
-                local timeString = string.format("%02d:%02d", minutes, seconds)
-                
-                TimerDisplay:SetContent(timeString)
-            else
-                TimerDisplay:SetContent("Ready!")
-            end
-        else
-            TimerDisplay:SetContent("--:--")
-        end
+            TimerDisplay:SetContent(remaining > 0 and string.format("%02d:%02d", math.floor(remaining / 60), math.floor(remaining % 60)) or "Ready!")
+        else TimerDisplay:SetContent("--:--") end
     end
 end)
 
@@ -868,8 +553,7 @@ spawn(function()
         if Options.Autofarm.Value and Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
             pcall(function()
                 local k = (math.random(1, 2) == 1) and Enum.KeyCode.Q or Enum.KeyCode.E
-                VirtualInputManager:SendKeyEvent(true, k, false, game)
-                task.wait(math.random(100, 500) / 1000)
+                VirtualInputManager:SendKeyEvent(true, k, false, game); task.wait(math.random(100, 500) / 1000)
                 VirtualInputManager:SendKeyEvent(false, k, false, game)
             end)
         end
@@ -881,76 +565,33 @@ if ButtonsFolder then
         if Options.Autofarm.Value or Options.OPFarm.Value then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; opFarmInitialized = false; RootPart.Anchored = false
-            task.wait(0.15)
-            POST:FireServer("Attacks", "Slash_Escape")
-            btn:Destroy(); task.wait(0.3)
-            
+            task.wait(0.15); POST:FireServer("Attacks", "Slash_Escape"); btn:Destroy(); task.wait(0.3)
             local currentBossTarget = getAvailableBossWeakPoint()
-            
             if Options.OPFarm.Value then
-                if currentBossTarget then
-                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
-                else
-                    local t = getAllTargets(); local l = {}
-                    for i = 1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end
-                    if #l > 0 then executeOPSlash(l) end
-                end
+                if currentBossTarget then executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                else local t = getAllTargets(); local l = {}; for i = 1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end; if #l > 0 then executeStealthSlash(l, true) end end
             else
-                if currentBossTarget then
-                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
-                else
-                    local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
-                    if #t > 0 then executeMultiSlash(t) end
-                end
+                if currentBossTarget then executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                else local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value); if #t > 0 then executeStealthSlash(t, false) end end
             end
         end
     end)
 end
 
 spawn(function()
-    -- ย้ายมาไว้ข้างนอกลูป เพื่อให้จำสถานะได้ตลอดการรันครั้งนี้
     local missionstarted = false 
-
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
-        
-        -- ตรวจสอบครั้งแรกที่เจอ Titan เพื่อยืนยันว่าเริ่มภารกิจแล้ว
-        -- และเมื่อเป็น true แล้ว จะไม่กลับไปเป็น false อีกจนกว่าลูปจะจบหรือเริ่มเกมใหม่
-        if not missionstarted and getAliveTitanCount() > 0 then 
-            missionstarted = true
-        end
-        
-        local shouldProcess = false
-        if isRaidMap then
-            if isRaidCompleted() then shouldProcess = true end
-        else
-            -- ภารกิจจะจบได้ (shouldProcess) ต้องเคยเริ่ม (missionstarted) และ Titan หมดแล้วเท่านั้น
-            if missionstarted and getAliveTitanCount() == 0 then 
-                shouldProcess = true 
-            end
-        end
-        
-        -- เพิ่มเงื่อนไขตรวจสอบว่าต้องผ่านการ 'missionstarted' มาก่อนถึงจะ Retry ได้
+        if not missionstarted and getAliveTitanCount() > 0 then missionstarted = true end
+        local shouldProcess = (isRaidMap and isRaidCompleted()) or (missionstarted and getAliveTitanCount() == 0)
         if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" and missionstarted then
-            runCounter = runCounter + 1
-            saveRunCount()
-            
+            runCounter = runCounter + 1; saveRunCount()
             local maxRuns = tonumber(Options.MaxRuns.Value) or 0
-            
             if maxRuns > 0 and runCounter >= maxRuns then
-                Library:Notify({Title="Run Limit Reached", Content="Teleporting to lobby...", Duration=5})
-                pcall(function() POST:FireServer("Functions", "Teleport") end)
-                -- หยุดการทำงานของลูปนี้เพราะจะกลับ Lobby แล้ว
-                break 
+                pcall(function() POST:FireServer("Functions", "Teleport") end); runCounter = 0; missionstarted = false; task.wait(10)
             else
-                if isRaidMap then openRaidChests() task.wait(1.5) end
-                
-                -- ก่อนสั่ง Retry ให้รีเซ็ตสถานะเผื่อกรณีที่สคริปต์ยังรันต่อในด่านถัดไป
-                missionstarted = false 
-                
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                farmingStarted = false
-                task.wait(6)
+                if isRaidMap then openRaidChests(); task.wait(1.5) end
+                missionstarted = false; pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); farmingStarted = false; task.wait(6)
             end
         end
     end
@@ -959,23 +600,16 @@ end)
 -- ==========================================
 -- [ 6. Save/Load ]
 -- ==========================================
-SaveManager:SetLibrary(Library)
-InterfaceManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({})
-InterfaceManager:SetFolder("FluentScriptHub")
-SaveManager:SetFolder("NonnyHub/game")
-InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
+SaveManager:SetLibrary(Library); InterfaceManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings(); SaveManager:SetIgnoreIndexes({})
+InterfaceManager:SetFolder("FluentScriptHub"); SaveManager:SetFolder("NonnyHub/game")
+InterfaceManager:BuildInterfaceSection(Tabs.Settings); SaveManager:BuildConfigSection(Tabs.Settings)
 
 local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.GameId) end
-task.spawn(function()
-    local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"
-    if isfile(f) then local s = SaveManager:Load(n); if s then Library:Notify({ Title = "Config", Content = "Auto-loaded", Duration = 3 }) end end
-end)
+task.spawn(function() local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"; if isfile(f) then SaveManager:Load(n) end end)
 local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Script Fixed & Applied!", Duration=5})
+Library:Notify({Title="Loaded", Content="Stealth Version Applied!", Duration=5})
 SaveManager:LoadAutoloadConfig()
