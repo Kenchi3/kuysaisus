@@ -580,16 +580,39 @@ spawn(function()
     local missionstarted = false 
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
-        if not missionstarted and getAliveTitanCount() > 0 then missionstarted = true end
-        local shouldProcess = (isRaidMap and isRaidCompleted()) or (missionstarted and getAliveTitanCount() == 0)
-        if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" and missionstarted then
+        
+        -- เริ่มนับเวลาเมื่อเจอไททันตัวแรก
+        if not missionstarted and getAliveTitanCount() > 0 then 
+            missionstarted = true 
+        end
+        
+        -- [แก้ไขหลัก] แยกเงื่อนไขการจบเกมระหว่าง Raid กับโหมดธรรมดา
+        local shouldProcess = false
+        if missionstarted and Workspace:GetAttribute("Map") ~= "Lobby" then
+            if isRaidMap then
+                -- สำหรับ RAID: จะถือว่าจบก็ต่อเมื่อ UI กล่องสมบัติขึ้นมาจริงๆ เท่านั้น (ไม่สนหายไปชั่วคราวระหว่าง Phase)
+                shouldProcess = isRaidCompleted()
+            else
+                -- สำหรับโหมมอื่น: ใช้เงื่อนไขเดิม (ไททันหมด = จบ)
+                shouldProcess = getAliveTitanCount() == 0
+            end
+        end
+
+        if shouldProcess then
             runCounter = runCounter + 1; saveRunCount()
             local maxRuns = tonumber(Options.MaxRuns.Value) or 0
+            
             if maxRuns > 0 and runCounter >= maxRuns then
-                pcall(function() POST:FireServer("Functions", "Teleport") end); runCounter = 0; missionstarted = false; task.wait(10)
+                pcall(function() POST:FireServer("Functions", "Teleport") end)
+                runCounter = 0; missionstarted = false; task.wait(10)
             else
-                if isRaidMap then openRaidChests(); task.wait(1.5) end
-                missionstarted = false; pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); farmingStarted = false; task.wait(6)
+                if isRaidMap then 
+                    openRaidChests(); task.wait(1.5) 
+                end
+                
+                missionstarted = false 
+                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
+                farmingStarted = false; task.wait(6)
             end
         end
     end
