@@ -48,7 +48,6 @@ local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface
 local PlaceId = game.PlaceId
 local isRaidMap = (PlaceId == 14012874501 or PlaceId == 13379349730)
 local RaidBossWeakPoints = {} 
-local isLobby = Workspace:GetAttribute("Map") == "Lobby"
 
 -- 🔥 [Variables]
 local farmingStarted = false
@@ -92,6 +91,18 @@ end
 
 -- โหลดค่า Run Count ทันทีที่เริ่มสคริปต์
 loadRunCount()
+
+-- [ข้อมูล Stats สำหรับ Auto Upgrade]
+local UPGRADE_STATS = {
+    Blades = {
+        "ODM_Damage", "ODM_Crit_Damage", "ODM_Crit_Chance", "Blade_Durability",
+        "ODM_Speed", "ODM_Control", "ODM_Range", "ODM_Gas"
+    },
+    Spears = {
+        "TS_Damage", "TS_Crit_Damage", "TS_Crit_Chance", "Blast_Radius",
+        "TS_Speed", "TS_Control", "TS_Range", "TS_Gas"
+    }
+}
 
 local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
@@ -443,11 +454,6 @@ local function joinBoostedMission()
             MissionCreated = true
         end
 
-        if runCounter ~= 0 then
-                runCounter = 0
-                saveRunCount()
-        end
-
         if MissionCreated then
             Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting...", Duration=3})
             task.wait(1)
@@ -459,9 +465,24 @@ local function joinBoostedMission()
     Library:Notify({Title="Error", Content="Failed to create lobby (No valid difficulty).", Duration=3})
     return false
 end
+
 -- ==========================================
 -- [ 4. สร้าง UI Elements ]
 -- ==========================================
+-- [Section: Auto Upgrade] -> ย้ายขึ้นมาบนสุดของ Main Tab เพื่อความสำคัญ
+Tabs.Main:CreateSection("Auto Upgrade")
+Tabs.Main:CreateToggle("AutoUpgrade", {
+    Title = "Auto Upgrade Equipment",
+    Default = false
+})
+
+Tabs.Main:CreateDropdown("UpgradeWeaponType", {
+    Title = "Weapon Type",
+    Values = {"Blades", "Spears", "Both"},
+    Default = 1
+})
+
+Tabs.Main:CreateSection("Auto Farm (Safe)")
 Tabs.Main:CreateToggle("OPFarm", {
     Title = "OP Farm (Sky Nuke)",
     Description = "Risky!!",
@@ -479,7 +500,6 @@ Tabs.Main:CreateSlider("BurstAmount", {
     Min = 1, Max = 5, Default = 5, Rounding = 0
 })
 
-Tabs.Main:CreateSection("Auto Farm (Safe)")
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Description = "", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Description = "Recommended 3-5", Min = 1, Max = 10, Default = 5, Rounding = 0 })
@@ -490,10 +510,10 @@ Tabs.Main:CreateSection("Time Guard")
 Tabs.Main:CreateToggle("UseMissionTimer", { 
     Title = "Hybrid Time Guard", 
     Description = "Stop farming until input time", 
-    Default = true 
+    Default = false 
 })
 
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "40", Numeric = true, Placeholder = "e.g. 120" })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Placeholder = "e.g. 120" })
 
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", {
     Title = "Timer Status",
@@ -515,8 +535,6 @@ Tabs.Main:CreateInput("MaxRuns", {
     Numeric = true, 
     Placeholder = "e.g. 10" 
 })
-
--- [ลบปุ่ม Reset Run Count ออกแล้ว]
 
 Tabs.Main:CreateButton{
     Title = "Shadow Ban Check",
@@ -553,6 +571,69 @@ spawn(function()
         end
         
         RunDisplay:SetContent(statusText)
+    end
+end)
+
+-- [Loop สำหรับระบบ Lobby: Reset, Upgrade, Join Mission]
+spawn(function()
+    while task.wait(2) do
+        local isLobby = Workspace:GetAttribute("Map") == "Lobby"
+        
+        if isLobby then
+            -- 1. Reset Run Count
+            if runCounter ~= 0 then
+                runCounter = 0
+                saveRunCount()
+                Library:Notify({Title="Lobby Detected", Content="Run Count Reset to 0", Duration=2})
+            end
+            
+            -- 2. Auto Upgrade (Priority: ทำจนเสร็จก่อน)
+            if Options.AutoUpgrade.Value then
+                Library:Notify({Title="Auto Upgrade", Content="Starting upgrade sequence...", Duration=3})
+                
+                local selectedType = Options.UpgradeWeaponType.Value
+                local statsList = {}
+                
+                if selectedType == "Blades" or selectedType == "Both" then
+                    for _, stat in pairs(UPGRADE_STATS.Blades) do table.insert(statsList, stat) end
+                end
+                if selectedType == "Spears" or selectedType == "Both" then
+                    for _, stat in pairs(UPGRADE_STATS.Spears) do table.insert(statsList, stat) end
+                end
+
+                local upgrading = true
+                while upgrading do
+                    local successCount = 0
+                    for _, statName in pairs(statsList) do
+                        local success, result = pcall(function()
+                            return GET:InvokeServer("S_Equipment", "Upgrade", {statName})
+                        end)
+                        
+                        if success and result then
+                            successCount = successCount + 1
+                            Library:Notify({Title="Upgraded!", Content=statName, Duration=1})
+                            task.wait(0.3)
+                        else
+                            task.wait(0.1)
+                        end
+                    end
+                    
+                    if successCount == 0 then
+                        upgrading = false
+                        Library:Notify({Title="Upgrade Done", Content="Maxed or No Money.", Duration=3})
+                    end
+                    task.wait(1)
+                end
+            end
+            
+            -- 3. Auto Join Mission (ทำหลัง Upgrade เสร็จ)
+            if Options.AutoJoinBoosted.Value then
+                if tick() - lastJoinAttempt > 5 then
+                    lastJoinAttempt = tick()
+                    joinBoostedMission()
+                end
+            end
+        end
     end
 end)
 
@@ -654,7 +735,7 @@ spawn(function()
             canKill = true
         end
 
-        if Options.OPFarm.Value and not isLobby then
+        if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
@@ -829,19 +910,6 @@ end
 
 spawn(function()
     while task.wait(2) do
-        if Options.AutoJoinBoosted.Value then
-            if isLobby then
-                if tick() - lastJoinAttempt > 5 then
-                    lastJoinAttempt = tick()
-                    joinBoostedMission()
-                end
-            end
-        end
-    end
-end)
-
-spawn(function()
-    while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
         
         local shouldProcess = false
@@ -851,7 +919,7 @@ spawn(function()
             if getAliveTitanCount() == 0 then shouldProcess = true end
         end
         
-        if shouldProcess and not isLobby then
+        if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" then
             runCounter = runCounter + 1
             saveRunCount() -- บันทึกเมื่อเพิ่ม
             
@@ -860,12 +928,11 @@ spawn(function()
             if maxRuns > 0 and runCounter >= maxRuns then
                 Library:Notify({Title="Run Limit Reached", Content="Teleporting to lobby...", Duration=5})
                 pcall(function() POST:FireServer("Functions", "Teleport") end)
-                -- ไม่จำเป็นต้องรีเซ็ตตรงนี้ เพราะ Loop ตรวจจับ Lobby จะรีเซ็ตให้อัตโนมัติ
             else
                 if isRaidMap then openRaidChests() task.wait(1.5) end
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
-                task.wait(30)
+                task.wait(6)
             end
         end
     end
