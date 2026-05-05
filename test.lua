@@ -298,6 +298,7 @@ local function executeBossBurst(bossPart, burstAmount)
         
         -- หน่วงเล็กน้อยระหว่างแต่ละรอบที่สปัวน์ เพื่อไม่ให้ยิงทับกันใน 1 เฟรมมากเกินไป (ป้องกันล้มเหลวจาก Server Rate Limit)
         task.wait(math.random(10, 30) / 1000)
+        print("burst")
     end
     
     return true
