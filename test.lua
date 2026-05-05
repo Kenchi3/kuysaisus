@@ -59,7 +59,7 @@ local lastJoinAttempt = 0
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 300
-local OP_MAX_TARGETS = 3
+local OP_MAX_TARGETS = 5
 
 local antiGravityConn = nil
 local savedHoverY = nil
@@ -830,8 +830,7 @@ end
 spawn(function()
     while task.wait(2) do
         if Options.AutoJoinBoosted.Value then
-            local inlobby = Workspace:GetAttribute("Map") == "Lobby"
-            if inlobby then
+            if isLobby then
                 if tick() - lastJoinAttempt > 5 then
                     lastJoinAttempt = tick()
                     joinBoostedMission()
@@ -866,7 +865,7 @@ spawn(function()
                 if isRaidMap then openRaidChests() task.wait(1.5) end
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
-                task.wait(10)
+                task.wait(30)
             end
         end
     end
