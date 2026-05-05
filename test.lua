@@ -290,15 +290,12 @@ local function executeBossBurst(bossPart, burstAmount)
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
             
             -- หน่วงไมโครวินาทีเพื่อให้ Server ทันรับ Event แล้วค่อยยิง Hit
-            task.wait(math.random(5, 15) / 1000)
             
             -- ยิง Register Hit
             pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         end)
         
         -- หน่วงเล็กน้อยระหว่างแต่ละรอบที่สปัวน์ เพื่อไม่ให้ยิงทับกันใน 1 เฟรมมากเกินไป (ป้องกันล้มเหลวจาก Server Rate Limit)
-        task.wait(math.random(10, 30) / 1000)
-        print("burst")
     end
     
     return true
@@ -353,7 +350,7 @@ Tabs.Main:CreateDropdown("UpgradeWeaponType", { Title = "Weapon Type", Values = 
 Tabs.Main:CreateSection("Auto Farm (Safe)")
 Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Description = "Risky but Stealthier now!", Default = false })
 Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false })
-Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 5, Default = 5, Rounding = 0 })
+Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
