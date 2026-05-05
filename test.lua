@@ -355,7 +355,6 @@ local function executeMultiSlash(napesArray)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
     end
     
-    task.wait(math.random(0.5, 1))
     for _, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
