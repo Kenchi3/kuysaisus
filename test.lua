@@ -276,7 +276,7 @@ local function executeStealthSlash(napesArray, isOP)
         if napePart and napePart.Parent then
             task.spawn(function()
                 -- หน่วงเวลาแบบสุ่มระหว่าง 0.01 - 0.05 วินาที เพื่อให้ดูเหมือน Swing ของดาบที่ผ่านร่างต่อเนื่อง
-                task.wait(math.random(1, 5) / 100)
+                task.wait(math.random(1, 3) / 100)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
