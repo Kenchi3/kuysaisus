@@ -46,7 +46,7 @@ local TitansFolder = Workspace:FindFirstChild("Titans")
 local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
 
 local PlaceId = game.PlaceId
-local isRaidMap = workspace:GetAttribute("Type") == "Raid"
+local isRaidMap = workspace:GetAttribute("Type") == "Raids"
 local RaidBossWeakPoints = {} 
 
 local farmingStarted = false
