@@ -59,7 +59,7 @@ local lastJoinAttempt = 0
 
 local opFarmInitialized = false
 local OP_FLY_HEIGHT = 300
-local OP_MAX_TARGETS = 5
+local OP_MAX_TARGETS = 3
 
 local antiGravityConn = nil
 local savedHoverY = nil
