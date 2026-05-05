@@ -443,6 +443,11 @@ local function joinBoostedMission()
             MissionCreated = true
         end
 
+        if runCounter ~= 0 then
+                runCounter = 0
+                saveRunCount()
+        end
+
         if MissionCreated then
             Library:Notify({Title="Success", Content="Created " .. diff .. " lobby! Starting...", Duration=3})
             task.wait(1)
@@ -548,18 +553,6 @@ spawn(function()
         end
         
         RunDisplay:SetContent(statusText)
-    end
-end)
-
--- [เพิ่มเติม] Loop สำหรับ Reset Run Count เมื่ออยู่ใน Lobby
-spawn(function()
-    while task.wait(2) do
-        if isLobby then
-            if runCounter ~= 0 then
-                runCounter = 0
-                saveRunCount()
-            end
-        end
     end
 end)
 
@@ -873,7 +866,7 @@ spawn(function()
                 if isRaidMap then openRaidChests() task.wait(1.5) end
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
-                task.wait(6)
+                task.wait(10)
             end
         end
     end
