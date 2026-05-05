@@ -471,6 +471,12 @@ Tabs.Main:CreateSection("Misc")
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 
+-- เพิ่มส่วนนี้เข้าไปใน Section Misc หลังจาก Input MaxRuns
+local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", {
+    Title = "Run Progress",
+    Content = "Current: 0 / Max: 0"
+})
+
 Tabs.Main:CreateInput("MaxRuns", { 
     Title = "Max Runs (0 = Infinite)", 
     Default = "0", 
@@ -500,6 +506,23 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", {
 -- ==========================================
 -- [ 5. Loop หลัก ]
 -- ==========================================
+-- เพิ่ม Loop นี้เข้าไป (แนะนำให้วางใกล้ Loop ของ TimerDisplay)
+spawn(function()
+    while task.wait(0.5) do
+        local currentCount = runCounter
+        local maxCount = tonumber(Options.MaxRuns.Value) or 0
+        
+        local statusText
+        if maxCount == 0 then
+            statusText = string.format("Current: %d / Max: ∞ (Infinite)", currentCount)
+        else
+            statusText = string.format("Current: %d / Max: %d", currentCount, maxCount)
+        end
+        
+        RunDisplay:SetContent(statusText)
+    end
+end)
+
 spawn(function()
     spawn(monitorRaidBosses)
     
