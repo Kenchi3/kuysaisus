@@ -911,6 +911,9 @@ end
 spawn(function()
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
+        local missionstarted = false
+        getAliveTitanCount() > 0 then missionstarted = true
+        end
         
         local shouldProcess = false
         if isRaidMap then
@@ -919,7 +922,7 @@ spawn(function()
             if getAliveTitanCount() == 0 then shouldProcess = true end
         end
         
-        if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" then
+        if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" and missionstarted then
             runCounter = runCounter + 1
             saveRunCount() -- บันทึกเมื่อเพิ่ม
             
