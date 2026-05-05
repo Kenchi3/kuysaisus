@@ -109,8 +109,20 @@ end
 local function isAnchorPhaseActive()
     if not isRaidMap then return false end
     
+    -- [แก้ไขหลัก] ถ้าบอสตัวจริงโผล่ใน TitansFolder แล้ว (ไม่ว่าจะ Attack หรือ Armored) แสดงว่าจบ Phase กันเรือแล้ว
+    if TitansFolder then
+        local activeBoss = TitansFolder:FindFirstChild("Attack_Titan") or TitansFolder:FindFirstChild("Armored_Titan")
+        if activeBoss then
+            local hum = activeBoss:FindFirstChildOfClass("Humanoid")
+            -- ถ้าบอสตัวจริงมีชีวิตอยู่ ให้หลุดจาก Anchor Phase ทันที !!!
+            if hum and hum.Health > 0 then
+                return false
+            end
+        end
+    end
+    
+    -- ถ้ายังไม่เจอบอสตัวจริง ค่อยเช็คว่าอยู่ Phase 1 ไหม
     if PlaceId == 14012874501 then
-        -- Attack Titan Map: ตรวจจากการมีอยู่ของ Object
         local unclimbable = workspace:FindFirstChild("Unclimbable")
         if unclimbable and unclimbable:FindFirstChild("Background") then
             return unclimbable.Background:FindFirstChild("Attack_Titan") ~= nil
@@ -118,7 +130,6 @@ local function isAnchorPhaseActive()
         return false
         
     elseif PlaceId == 13379349730 then
-        -- Armored Titan Map: ตรวจจาก Attribute "Phase"
         local unclimbable = workspace:FindFirstChild("Unclimbable")
         if unclimbable and unclimbable:FindFirstChild("Objective") then
             local bossObj = unclimbable.Objective:FindFirstChild("Armored_Boss")
