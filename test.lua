@@ -103,7 +103,6 @@ local function getRaidAnchorPos()
     return nil
 end
 
--- [เพิ่มเติม] ฟังก์ชันสำหรับดึง Object ตัวจริงมาเช็คว่ายังมีชีวิตอยู่ไหม
 local function getRaidAnchorObj()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
     if not unclimbable then return nil, nil end
@@ -155,7 +154,6 @@ local function stealthFlyTo(targetPos)
             isFlying = false
             RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.1
             
-            -- [แก้ไข] ปล่อย PlatformStand เมื่อบินถึงจุดหมาย เพื่อให้ระบบลอยซ่อนเสร็จแล้วทำงานต่อ
             if not Options.OPFarm.Value then
                 Humanoid.PlatformStand = false
             end
@@ -222,12 +220,10 @@ local function getAvailableBossWeakPoint()
     local raidBossNames = {"Attack_Titan", "Armored_Titan"}
     
     for _, bossName in ipairs(raidBossNames) do
-        -- 1. ถ้ามีจุดอ่อน (Marker) ให้ยิงที่จุดอ่อนก่อน
         if RaidBossWeakPoints[bossName] and RaidBossWeakPoints[bossName].Parent then
             return RaidBossWeakPoints[bossName]
         end
         
-        -- 2. ถ้าไม่มีจุดอ่อน ให้ลงไปหา Nape ของบอสตัวนั้นโดยตรง
         local bossModel = TitansFolder and TitansFolder:FindFirstChild(bossName)
         if bossModel and bossModel:IsA("Model") then
             local hum = bossModel:FindFirstChildOfClass("Humanoid")
@@ -236,7 +232,6 @@ local function getAvailableBossWeakPoint()
                 if hb then
                     local hf = hb:FindFirstChild("Hit")
                     if hf then
-                        -- ค้นหา Nape ใน Hitboxes
                         local nape = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart")
                         if nape then return nape end
                     end
@@ -262,7 +257,6 @@ local function getTargetsNearAnchor(maxCount, radius)
     local targets = {}
     for _, titan in ipairs(TitansFolder:GetChildren()) do
         if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            -- รองรับทั้งบอสที่มี WeakPoint และไททันธรรมดา
             local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
             if tp and (tp.Position - anchorPos).Magnitude <= radius then
                 table.insert(targets, tp)
@@ -270,7 +264,6 @@ local function getTargetsNearAnchor(maxCount, radius)
         end
     end
     
-    -- เรียงลำดับไททันที่ใกล้ Anchor ที่สุดขึ้นก่อน เพื่อป้องกัน Anchor ได้แม่นยำขึ้น
     table.sort(targets, function(a, b)
         return (a.Position - anchorPos).Magnitude < (b.Position - anchorPos).Magnitude
     end)
@@ -282,9 +275,6 @@ local function getTargetsNearAnchor(maxCount, radius)
     
     return limitedTargets, anchorPos
 end
-
-local function getTargetCluster(maxCount, radius)
--- ... โค้ดเดิม ...
 
 local function getTargetCluster(maxCount, radius)
     local closestPart, minDistance, anchorPosition = nil, math.huge, RootPart.Position
@@ -361,19 +351,11 @@ end
 local function executeBossBurst(bossPart, burstAmount)
     if not bossPart then return false end
     
-    -- ยิงตามจำนวน Burst Amount แบบรัวๆทันที
     for i = 1, burstAmount do
         task.spawn(function()
-            -- ยิง Animation Slash
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-            
-            -- หน่วงไมโครวินาทีเพื่อให้ Server ทันรับ Event แล้วค่อยยิง Hit
-            
-            -- ยิง Register Hit
             pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         end)
-        
-        -- หน่วงเล็กน้อยระหว่างแต่ละรอบที่สปัวน์ เพื่อไม่ให้ยิงทับกันใน 1 เฟรมมากเกินไป (ป้องกันล้มเหลวจาก Server Rate Limit)
     end
     
     return true
@@ -433,7 +415,7 @@ Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Ma
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
 Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
-Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
+Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 500, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
@@ -507,20 +489,15 @@ spawn(function()
             continue 
         end
 
-        -- [แก้ไขหลัก] Anti-Gravity ไม่ลบค่าความเร็วแกน X Z และหยุดทำงานเมื่อกำลังบิน
         if not antiGravityConn then
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
-                    -- ถ้าระบบบินกำลังควบคุม ให้ Anti-Gravity ยกเลิกการแทรกแซงเพื่อไม่ให้ชนกัน
                     if isFlying then return end
-                    
                     local currentVel = RootPart.AssemblyLinearVelocity
                     if savedHoverY then
                         local diff = savedHoverY - RootPart.Position.Y
-                        -- ดันตัวขึ้นลงเท่านั้น โดยเก็บค่า X Z เดิมไว้
                         RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, diff * 5, currentVel.Z)
                     else
-                        -- ชะลอการตก โดยไม่รบกวนแกน X Z
                         RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, math.clamp(currentVel.Y, -5, 100), currentVel.Z)
                     end
                 end
@@ -568,7 +545,6 @@ spawn(function()
             local anchorPos = isRaidMap and getRaidAnchorPos()
             
             if not opFarmInitialized then
-                -- ถ้ามี Anchor ให้ลอยเหนือ Anchor ถ้าไม่มีก็ลอยตามค่า OP_FLY_HEIGHT ปกติ
                 savedHoverY = (anchorPos and (anchorPos.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
                 RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
                 opFarmInitialized = true
@@ -581,14 +557,12 @@ spawn(function()
             end
 
             if anchorPos then
-                -- [โฟกัส Anchor] ค่อยๆ เคลื่อนที่ไปลอยเหนือ Anchor แบบนุ่มนวล
                 local hoverGoal = anchorPos + Vector3.new(0, FLY_OFFSET, 0)
                 local dir = (hoverGoal - RootPart.Position)
                 if dir.Magnitude > 15 then
                     RootPart.AssemblyLinearVelocity = dir.Unit * 150
                 end
                 
-                -- ตีไททันที่เดินเข้ามาใกล้ๆ Anchor เท่านั้น
                 local limit = Options.TargetLimit.Value 
                 local radius = Options.AoERadius.Value
                 local nearbyTargets = getTargetsNearAnchor(limit, radius)
@@ -597,7 +571,6 @@ spawn(function()
                     if canKill then executeStealthSlash(nearbyTargets, true) end
                 end
             else
-                -- [Anchor หายแล้ว] ออกจากโหมดค้างบน Anchor ทำตามปกติ (ฟาร์มบอส/ฟาร์มปกติ)
                 if currentBossTarget then
                     executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
                 else
@@ -622,17 +595,14 @@ spawn(function()
             
             savedHoverY = nil
             
-            -- [โฟกัส Anchor] สำหรับ Safe Farm
             if isRaidMap then
                 local anchorPos = getRaidAnchorPos()
                 if anchorPos then
-                    -- ถ้าตัวเองอยู่ไกลเกินไป ให้บินกลับไปลอยเหนือ Anchor
                     if (RootPart.Position - anchorPos).Magnitude > 40 then
                         stealthFlyTo(anchorPos)
                         while isFlying do task.wait(0.05) end
                     end
                     
-                    -- ตีไททันที่เดินเข้ามาใกล้ๆ Anchor เท่านั้น
                     local limit = Options.TargetLimit.Value 
                     local radius = Options.AoERadius.Value
                     local nearbyTargets = getTargetsNearAnchor(limit, radius)
@@ -643,11 +613,10 @@ spawn(function()
                     else
                         task.wait(0.5)
                     end
-                    continue -- ข้ามโค้ดด้านล่าง วนลูปมาเช็ค Anchor ใหม่
+                    continue 
                 end
             end
             
-            -- [ทำงานปกติเมื่อ Anchor หายไปแล้ว]
             if currentBossTarget then
                 stealthFlyTo(currentBossTarget.Position)
                 while isFlying do task.wait(0.05) end
@@ -664,6 +633,8 @@ spawn(function()
                 else task.wait(0.5) end
             end
         end
+    end
+end)
 
 spawn(function()
     while task.wait(0.1) do
@@ -711,19 +682,15 @@ spawn(function()
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
         
-        -- เริ่มนับเวลาเมื่อเจอไททันตัวแรก
         if not missionstarted and getAliveTitanCount() > 0 then 
             missionstarted = true 
         end
         
-        -- [แก้ไขหลัก] แยกเงื่อนไขการจบเกมระหว่าง Raid กับโหมดธรรมดา
         local shouldProcess = false
         if missionstarted and Workspace:GetAttribute("Map") ~= "Lobby" then
             if isRaidMap then
-                -- สำหรับ RAID: จะถือว่าจบก็ต่อเมื่อ UI กล่องสมบัติขึ้นมาจริงๆ เท่านั้น (ไม่สนหายไปชั่วคราวระหว่าง Phase)
                 shouldProcess = isRaidCompleted()
             else
-                -- สำหรับโหมมอื่น: ใช้เงื่อนไขเดิม (ไททันหมด = จบ)
                 shouldProcess = getAliveTitanCount() == 0
             end
         end
