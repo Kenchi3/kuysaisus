@@ -112,7 +112,6 @@ local isFlying = false
 local NoclipConnection = nil
 local flightConnection = nil 
 
--- [เปลี่ยนแปลง 1: Stealth Flight - ใช้ Velocity แทน CFrame วาร์ป]
 local function stealthFlyTo(targetPos)
     if not RootPart or isFlying then return end 
     isFlying = true
@@ -130,20 +129,21 @@ local function stealthFlyTo(targetPos)
         
         if distance < 5 then
             isFlying = false
-            -- ลด Velocity ลงแบบมนุษย์ ไม่ได้รีเซ็ตเป็น 0 ทันที
             RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.1
+            
+            -- [แก้ไข] ปล่อย PlatformStand เมื่อบินถึงจุดหมาย เพื่อให้ระบบลอยซ่อนเสร็จแล้วทำงานต่อ
+            if not Options.OPFarm.Value then
+                Humanoid.PlatformStand = false
+            end
+            
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             return
         end
 
-        -- คำนวณความเร็วตามระยะทาง (เบรคตอนใกล้ถึง)
         local speedFactor = math.clamp(distance / 20, 0.5, 1)
         local targetVelocity = direction.Unit * (FLY_SPEED * speedFactor)
         
-        -- ปรับ Velocity ไปหาเป้าหมาย แทนการย้าย CFrame
         RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.2)
-        
-        -- หันหน้าไปที่เป้าหมาย (ส่งผลต่อการ Register Hit ฝั่งเซิร์ฟเวอร์)
         RootPart.CFrame = CFrame.lookAt(RootPart.Position, Vector3.new(goalPos.X, RootPart.Position.Y, goalPos.Z))
     end)
 end
@@ -252,7 +252,6 @@ local function performSimulatedClick(x, y)
     end)
 end
 
--- [เปลี่ยนแปลง 2: Stealth Multi-Slash - หน่วงเวลาการยิง Register แบบมนุษย์]
 local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
     
@@ -271,11 +270,9 @@ local function executeStealthSlash(napesArray, isOP)
         performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
     end
     
-    -- ยิง Register แบบหน่วงเวลานิดหน่อย (แทนการยิงพร้อมกันทั้งก้อนใน 1 วินาที)
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                -- หน่วงเวลาแบบสุ่มระหว่าง 0.01 - 0.05 วินาที เพื่อให้ดูเหมือน Swing ของดาบที่ผ่านร่างต่อเนื่อง
                 task.wait(math.random(1, 3) / 100)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
@@ -370,7 +367,6 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 -- ==========================================
 -- [ 5. Loop หลัก (Stealth Version) ]
 -- ==========================================
--- ระบบจับเหตุการณ์ตาย/เกิดใหม่สะอาดขึ้น
 Humanoid.Died:Connect(function()
     if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
     if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
@@ -426,18 +422,21 @@ spawn(function()
             continue 
         end
 
-        -- [เปลี่ยนแปลง 3: Anti-Gravity แบบลูกผสม Velocity ไม่ใช่กดยึด CFrame ตลอด]
+        -- [แก้ไขหลัก] Anti-Gravity ไม่ลบค่าความเร็วแกน X Z และหยุดทำงานเมื่อกำลังบิน
         if not antiGravityConn then
             antiGravityConn = RunService.Heartbeat:Connect(function()
                 if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
-                    -- ยกเลิกการรีเซ็ต Velocity เป็น 0 แบบเดิม แต่เปลี่ยนเป็นการดันตัวเองให้ลอยขึ้นช้าๆ แทน
-                    if savedHoverY and not isFlying then
+                    -- ถ้าระบบบินกำลังควบคุม ให้ Anti-Gravity ยกเลิกการแทรกแซงเพื่อไม่ให้ชนกัน
+                    if isFlying then return end
+                    
+                    local currentVel = RootPart.AssemblyLinearVelocity
+                    if savedHoverY then
                         local diff = savedHoverY - RootPart.Position.Y
-                        -- ถ้าต่ำกว่าจุดลอย ให้ดันขึ้น ถ้าสูงกว่า ให้ดันลง (เกลี่ยแรง)
-                        RootPart.AssemblyLinearVelocity = Vector3.new(0, diff * 5, 0)
+                        -- ดันตัวขึ้นลงเท่านั้น โดยเก็บค่า X Z เดิมไว้
+                        RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, diff * 5, currentVel.Z)
                     else
-                        -- ลดแรงดึงดูดลง (ชะลอการตก)
-                        RootPart.AssemblyLinearVelocity = Vector3.new(0, math.clamp(RootPart.AssemblyLinearVelocity.Y, -5, 100), 0)
+                        -- ชะลอการตก โดยไม่รบกวนแกน X Z
+                        RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, math.clamp(currentVel.Y, -5, 100), currentVel.Z)
                     end
                 end
             end)
@@ -455,7 +454,6 @@ spawn(function()
             end
         end
 
-        -- [เปลี่ยนแปลง 4: Noclip แบบประหยัด ไม่สแปม Stepped หนักๆ]
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
                 if Character and (Options.Autofarm.Value or Options.OPFarm.Value) then
@@ -482,10 +480,9 @@ spawn(function()
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
             
-            -- [เปลี่ยนแปลง 5: OP Farm ลอยแบบ Velocity ไม่ใช้ Anchor]
             if not opFarmInitialized then
                 savedHoverY = OP_FLY_HEIGHT + math.random(-5, 5)
-                RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0) -- ดันตัวเองขึ้นไปบนแบบรวดเร็ว
+                RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
                 opFarmInitialized = true
             end
             
@@ -510,6 +507,8 @@ spawn(function()
 
         if Options.Autofarm.Value then
             opFarmInitialized = false; RootPart.Anchored = false 
+            -- [แก้ไข] ปล่อย PlatformStand ทันทีเมื่อเข้า Safe Mode
+            Humanoid.PlatformStand = false 
             
             if isBladeEmpty() then 
                 if not savedHoverY then savedHoverY = RootPart.CFrame.Y end 
