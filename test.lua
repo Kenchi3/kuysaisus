@@ -909,10 +909,15 @@ if ButtonsFolder then
 end
 
 spawn(function()
+    -- ย้ายมาไว้ข้างนอกลูป เพื่อให้จำสถานะได้ตลอดการรันครั้งนี้
+    local missionstarted = false 
+
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
-        local missionstarted = false
-        if getAliveTitanCount() > 0 then 
+        
+        -- ตรวจสอบครั้งแรกที่เจอ Titan เพื่อยืนยันว่าเริ่มภารกิจแล้ว
+        -- และเมื่อเป็น true แล้ว จะไม่กลับไปเป็น false อีกจนกว่าลูปจะจบหรือเริ่มเกมใหม่
+        if not missionstarted and getAliveTitanCount() > 0 then 
             missionstarted = true
         end
         
@@ -920,20 +925,30 @@ spawn(function()
         if isRaidMap then
             if isRaidCompleted() then shouldProcess = true end
         else
-            if getAliveTitanCount() == 0 then shouldProcess = true end
+            -- ภารกิจจะจบได้ (shouldProcess) ต้องเคยเริ่ม (missionstarted) และ Titan หมดแล้วเท่านั้น
+            if missionstarted and getAliveTitanCount() == 0 then 
+                shouldProcess = true 
+            end
         end
         
+        -- เพิ่มเงื่อนไขตรวจสอบว่าต้องผ่านการ 'missionstarted' มาก่อนถึงจะ Retry ได้
         if shouldProcess and Workspace:GetAttribute("Map") ~= "Lobby" and missionstarted then
             runCounter = runCounter + 1
-            saveRunCount() -- บันทึกเมื่อเพิ่ม
+            saveRunCount()
             
             local maxRuns = tonumber(Options.MaxRuns.Value) or 0
             
             if maxRuns > 0 and runCounter >= maxRuns then
                 Library:Notify({Title="Run Limit Reached", Content="Teleporting to lobby...", Duration=5})
                 pcall(function() POST:FireServer("Functions", "Teleport") end)
+                -- หยุดการทำงานของลูปนี้เพราะจะกลับ Lobby แล้ว
+                break 
             else
                 if isRaidMap then openRaidChests() task.wait(1.5) end
+                
+                -- ก่อนสั่ง Retry ให้รีเซ็ตสถานะเผื่อกรณีที่สคริปต์ยังรันต่อในด่านถัดไป
+                missionstarted = false 
+                
                 pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
                 farmingStarted = false
                 task.wait(6)
