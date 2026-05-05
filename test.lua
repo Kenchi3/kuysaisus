@@ -493,13 +493,13 @@ spawn(function()
             end
 
             if currentBossTarget then
-                performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15))
+                
                 executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
             else
                 local allTargets = getAllTargets()
                 local limitedTargets = {}; for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
                 if #limitedTargets > 0 then
-                    if canKill then performSimulatedClick(1400 + math.random(-15, 15), 900 + math.random(-15, 15)); executeStealthSlash(limitedTargets, true) end
+                    if canKill then executeStealthSlash(limitedTargets, true) end
                 end
             end
             task.wait(1); continue 
