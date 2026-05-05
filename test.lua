@@ -529,6 +529,27 @@ spawn(function()
             canKill = gameTime >= minTime
         end
 
+        -- ==========================================
+        -- [ระบบใหม่] Raid Anchor Focus
+        -- ==========================================
+        if isRaidMap then
+            local anchorObj, anchorPos = getRaidAnchorObj()
+            if anchorObj then
+                if Options.OPFarm.Value then
+                    -- OP Farm: อยู่บนฟ้าอยู่แล้ว แค่หยุดรอเพื่อไม่ให้ยิงอะไรผิดพลาด
+                    task.wait(0.5)
+                else
+                    -- Safe Farm: บินไปโฟกัสที่ Anchor และค้างอยู่จนกว่ามันจะหายไป
+                    stealthFlyTo(anchorPos)
+                    while isFlying do task.wait(0.05) end
+                end
+                continue -- ข้ามการทำงานอื่นๆ แล้ววนลูปไปเช็คใหม่ว่า Anchor หายไปรึยัง
+            end
+        end
+        -- ==========================================
+
+        if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
+
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
             isFlying = false; Humanoid.PlatformStand = true
