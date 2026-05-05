@@ -282,14 +282,24 @@ end
 
 local function executeBossBurst(bossPart, burstAmount)
     if not bossPart then return false end
+    
+    -- ยิงตามจำนวน Burst Amount แบบรัวๆทันที
     for i = 1, burstAmount do
-        task.wait(math.random(0.5, 1))
         task.spawn(function()
+            -- ยิง Animation Slash
             pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-            task.wait(math.random(1, 5) / 1000)
+            
+            -- หน่วงไมโครวินาทีเพื่อให้ Server ทันรับ Event แล้วค่อยยิง Hit
+            task.wait(math.random(5, 15) / 1000)
+            
+            -- ยิง Register Hit
             pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         end)
+        
+        -- หน่วงเล็กน้อยระหว่างแต่ละรอบที่สปัวน์ เพื่อไม่ให้ยิงทับกันใน 1 เฟรมมากเกินไป (ป้องกันล้มเหลวจาก Server Rate Limit)
+        task.wait(math.random(10, 30) / 1000)
     end
+    
     return true
 end
 
