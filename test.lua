@@ -107,7 +107,7 @@ end
 -- [ 3. ฟังก์ชันระบบทำงาน (Stealth Version) ]
 -- ==========================================
 local FLY_OFFSET = 100
-local FLY_SPEED = 300
+local FLY_SPEED = 200
 local isFlying = false
 local NoclipConnection = nil
 local flightConnection = nil 
