@@ -95,11 +95,11 @@ loadRunCount()
 -- [ข้อมูล Stats สำหรับ Auto Upgrade]
 local UPGRADE_STATS = {
     Blades = {
-        "ODM_Damage", "ODM_Crit_Damage", "ODM_Crit_Chance", "Blade_Durability",
+        "ODM_Damage", "Crit_Damage", "Crit_Chance", "Blade_Durability",
         "ODM_Speed", "ODM_Control", "ODM_Range", "ODM_Gas"
     },
     Spears = {
-        "TS_Damage", "TS_Crit_Damage", "TS_Crit_Chance", "Blast_Radius",
+        "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius",
         "TS_Speed", "TS_Control", "TS_Range", "TS_Gas"
     }
 }
