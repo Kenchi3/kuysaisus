@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "Stealth Hybrid Guard",
+    SubTitle = "Hook Physics v3 (Height Lock)",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -42,8 +42,6 @@ local Remotes = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
 local POST = Remotes:WaitForChild("POST")
 local GET = Remotes:WaitForChild("GET")
 local TitansFolder = Workspace:FindFirstChild("Titans")
-
--- [แก้ไข] ใช้ WaitForChild สำหรับ PlayerGui เพื่อป้องกัน nil error
 local ButtonsFolder = Player:WaitForChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
 
 local PlaceId = game.PlaceId
@@ -62,12 +60,10 @@ local OP_MAX_TARGETS = 3
 
 -- [ระบบฟิสิกส์]
 local savedHoverY = nil
-local hoverForce = nil
-local hoverAttachment = nil
 local flyTargetPos = nil
 local isFlying = false
-local NoclipConnection = nil
 local physicsConn = nil
+local lockHeight_Y = nil -- ตัวแปรสำหรับล๊อคความสูงในโหมด Normal Farm
 
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
@@ -133,30 +129,6 @@ end
 -- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
 local FLY_OFFSET = 150
-
-local function setupHoverForce()
-    if hoverForce then return end
-    hoverAttachment = Instance.new("Attachment", RootPart)
-    hoverForce = Instance.new("LinearVelocity", RootPart)
-    hoverForce.Attachment0 = hoverAttachment
-    hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
-    
-    -- [แก้ไข Bug สำคัญ] LinearVelocity ใช้ ForceLimit (Number) ไม่ใช่ MaxForce (Vector3)
-    hoverForce.ForceLimit = 40000 
-    
-    hoverForce.EraseUndeflectedForces = Enum.EraseUndeflectedForces.Always
-end
-
-local function cleanupHoverForce()
-    if hoverForce then hoverForce:Destroy(); hoverForce = nil end
-    if hoverAttachment then hoverAttachment:Destroy(); hoverAttachment = nil end
-end
-
-local function stealthFlyTo(targetPos)
-    if not RootPart or isFlying then return end 
-    isFlying = true
-    flyTargetPos = targetPos + Vector3.new(math.random(-5, 5), FLY_OFFSET + math.random(-2, 2), math.random(-5, 5))
-end
 
 local function findNearestStation()
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -273,30 +245,32 @@ end
 local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
     Humanoid.PlatformStand = false
-    task.wait(0.05)
     
     if not isOP then
         local mainTarget = napesArray[1]
         if mainTarget and mainTarget.Parent then
             pcall(function() workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, mainTarget.Position) end)
-            task.wait(0.05)
         end
     end
 
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-    task.wait(0.15)
     
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                task.wait(i * 0.03 + math.random(10, 30) / 1000)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
     end
-    
-    task.wait(0.2)
-    if isOP then Humanoid.PlatformStand = true end
+
+    -- [แก้ไข] ถ้าเป็น Normal Farm ให้เปิด PlatformStand ทันทีหลังโจมตีเพื่อไม่ให้ตก
+    if isOP then 
+        Humanoid.PlatformStand = true 
+    else
+        if Options.Autofarm.Value then
+            Humanoid.PlatformStand = true
+        end
+    end
     return true
 end
 
@@ -354,7 +328,7 @@ Tabs.Main:CreateSection("Auto Upgrade")
 Tabs.Main:CreateToggle("AutoUpgrade", { Title = "Auto Upgrade Equipment", Default = false })
 Tabs.Main:CreateDropdown("UpgradeWeaponType", { Title = "Weapon Type", Values = {"Blades", "Spears", "Both"}, Default = 1 })
 
-Tabs.Main:CreateSection("Auto Farm (Safe)")
+Tabs.Main:CreateSection("Auto Farm (Hook Physics)")
 Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Default = false })
 Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false })
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
@@ -371,6 +345,7 @@ Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)",
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", { Title = "Timer Status", Content = "Status: Idle" })
 
 Tabs.Main:CreateSection("Misc")
+Tabs.Main:CreateToggle("Noclip", { Title = "Noclip (Phase Through Walls)", Default = true })
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", { Title = "Run Progress", Content = "Current: 0 / Max: 0" })
@@ -380,13 +355,121 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Loop หลัก ]
+-- [ 5. Hook Physics Engine & Noclip ]
 -- ==========================================
+
+-- [ระบบ Noclip]
+RunService.Stepped:Connect(function()
+    if Options.Noclip.Value then
+        if Character then
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+end)
+
+-- Function สั่งบิน
+local function hookFlyTo(targetPos)
+    if not RootPart then return end
+    isFlying = true
+    flyTargetPos = targetPos
+    lockHeight_Y = nil -- ปลดล๊อคความสูงเมื่อเริ่มบินใหม่
+    Humanoid.PlatformStand = true
+end
+
+-- Function หยุดบิน
+local function stopFlying()
+    isFlying = false
+    flyTargetPos = nil
+    lockHeight_Y = nil
+end
+
+-- Loop หลักฟิสิกส์
+spawn(function()
+    physicsConn = RunService.Heartbeat:Connect(function(dt)
+        if not RootPart or not Humanoid then return end
+        
+        if Options.Autofarm.Value or Options.OPFarm.Value then
+            
+            -- [สถานะ 1: บินไปเป้าหมาย]
+            if isFlying and flyTargetPos then
+                local direction = (flyTargetPos - RootPart.Position)
+                local dist = direction.Magnitude
+                
+                -- คำนวณความสูง (Arc)
+                local heightBoost = math.clamp(dist / 2, 0, 150) 
+                local adjustedTarget = Vector3.new(flyTargetPos.X, flyTargetPos.Y + heightBoost, flyTargetPos.Z)
+                
+                local targetDir = (adjustedTarget - RootPart.Position).Unit
+                local targetSpeed = math.clamp(dist * 5, 50, 300)
+                
+                local targetVelocity = targetDir * targetSpeed
+                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.2)
+                
+                -- ถึงเป้าหมาย
+                if dist < 10 then
+                    isFlying = false
+                    flyTargetPos = nil
+                    
+                    -- [Logic ล๊อคความสูง]
+                    if Options.Autofarm.Value then
+                         lockHeight_Y = RootPart.Position.Y -- จำความสูงตอนนี้ไว้
+                    end
+                    
+                    RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.3
+                    return
+                end
+                
+                local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
+                RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
+            
+            -- [สถานะ 2: Hover แบบ OP Farm]
+            elseif savedHoverY then
+                local diffY = savedHoverY - RootPart.Position.Y
+                local targetVel = Vector3.new(0, diffY * 50, 0)
+                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.1)
+            
+            -- [สถานะ 3: ล๊อคความสูง Normal Farm]
+            elseif lockHeight_Y and Options.Autofarm.Value then
+                Humanoid.PlatformStand = true
+                local diffY = lockHeight_Y - RootPart.Position.Y
+                -- ใช้ Velocity เพื่อรักษาตำแหน่งแกน Y และหยุดการเคลื่อนไหวแนวนอน
+                local targetVel = Vector3.new(0, diffY * 50, 0)
+                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.15)
+                
+            -- [สถานะ 4: ยืนนิ่งๆ]
+            elseif not isFlying then
+                 if Options.OPFarm.Value then
+                    Humanoid.PlatformStand = true
+                 else
+                    -- ถ้าไม่มี lockHeight จะปิด PlatformStand (แต่ถ้าเปิด Normal Farm ควรจะมี lockHeight เสมอ)
+                    if not Options.Autofarm.Value then
+                        Humanoid.PlatformStand = false
+                    end
+                 end
+            end
+        else
+            -- Reset เมื่อปิด Farm
+            if isFlying or savedHoverY or lockHeight_Y then
+                isFlying = false
+                flyTargetPos = nil
+                savedHoverY = nil
+                lockHeight_Y = nil
+                Humanoid.PlatformStand = false
+            end
+        end
+    end)
+end)
+
+-- Reset เมื่อตาย
 Humanoid.Died:Connect(function()
-    cleanupHoverForce()
-    if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
-    if physicsConn then physicsConn:Disconnect(); physicsConn = nil end
-    isFlying = false; opFarmInitialized = false; savedHoverY = nil; flyTargetPos = nil; farmingStarted = false
+    stopFlying()
+    savedHoverY = nil
+    lockHeight_Y = nil
+    opFarmInitialized = false
     Character = Player.CharacterAdded:Wait()
     RootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
@@ -431,18 +514,11 @@ spawn(monitorRaidBosses)
 spawn(function()
     while task.wait(0.1) do
         if not Options.Autofarm.Value and not Options.OPFarm.Value then 
-            cleanupHoverForce()
-            if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
-            isFlying = false; opFarmInitialized = false; savedHoverY = nil; flyTargetPos = nil; Humanoid.PlatformStand = false; farmingStarted = false
-            if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
+            stopFlying()
+            savedHoverY = nil
+            lockHeight_Y = nil
+            opFarmInitialized = false; Humanoid.PlatformStand = false; farmingStarted = false
             continue 
-        end
-
-        if not hoverForce then setupHoverForce() end
-        if not NoclipConnection then
-            NoclipConnection = RunService.Stepped:Connect(function()
-                if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end end end
-            end)
         end
 
         local bt = getAvailableBossWeakPoint()
@@ -455,7 +531,8 @@ spawn(function()
         end
 
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            flyTargetPos = nil
+            lockHeight_Y = nil -- ปิดล๊อคความสูงแบบ Normal
+            stopFlying() 
             Humanoid.PlatformStand = true
             local ap = getRaidAnchorPos()
             
@@ -467,11 +544,17 @@ spawn(function()
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
 
             if isAnchorPhaseActive() and ap then
-                flyTargetPos = ap + Vector3.new(0, FLY_OFFSET, 0)
+                local targetFlat = Vector3.new(ap.X, savedHoverY, ap.Z)
+                if (RootPart.Position - targetFlat).Magnitude > 20 then
+                     local dir = (targetFlat - RootPart.Position).Unit
+                     RootPart.AssemblyLinearVelocity = Vector3.new(dir.X * 100, 0, dir.Z * 100)
+                else
+                     RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) 
+                end
+                
                 local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #nt > 0 and ck then executeStealthSlash(nt, true) end
             else
-                flyTargetPos = nil
                 if bt then executeBossBurst(bt, Options.BurstAmount.Value)
                 else
                     local at = getAllTargets(); local lt = {}; for i = 1, math.min(#at, OP_MAX_TARGETS) do table.insert(lt, at[i]) end
@@ -482,14 +565,18 @@ spawn(function()
         end
 
         if Options.Autofarm.Value then
-            opFarmInitialized = false; Humanoid.PlatformStand = false 
-            if isBladeEmpty() then if not savedHoverY then savedHoverY = RootPart.CFrame.Y end safeRefillBlades(); task.wait(1); continue end
-            savedHoverY = nil
+            savedHoverY = nil -- ปิด Hover แบบ OP
+            opFarmInitialized = false
+            
+            if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
             
             if isAnchorPhaseActive() then
                 local ap = getRaidAnchorPos()
                 if ap then
-                    if (RootPart.Position - ap).Magnitude > 40 then stealthFlyTo(ap); while isFlying do task.wait(0.05) end end
+                    if (RootPart.Position - ap).Magnitude > 40 then 
+                        hookFlyTo(ap) 
+                        while isFlying do task.wait(0.05) end 
+                    end
                     local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                     if #nt > 0 then
                         if ck then executeStealthSlash(nt, false) end
@@ -500,52 +587,21 @@ spawn(function()
             end
             
             if bt then
-                stealthFlyTo(bt.Position); while isFlying do task.wait(0.05) end
+                hookFlyTo(bt.Position)
+                while isFlying do task.wait(0.05) end
                 if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
                 task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
             else
                 local t, ap = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #t > 0 and ap then
-                    stealthFlyTo(ap); while isFlying do task.wait(0.05) end
+                    hookFlyTo(ap)
+                    while isFlying do task.wait(0.05) end
                     if ck then executeStealthSlash(t, false) end
                     task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
             end
         end
     end
-end)
-
-spawn(function()
-    physicsConn = RunService.Heartbeat:Connect(function(dt)
-        if not hoverForce or not RootPart then return end
-        if not Options.Autofarm.Value and not Options.OPFarm.Value then return end
-        
-        local lerpAlpha = 0.4 * dt * 60 
-
-        if flyTargetPos then
-            local diff = flyTargetPos - RootPart.Position
-            local dist = diff.Magnitude
-            
-            if dist < 5 then
-                isFlying = false
-                flyTargetPos = nil
-                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
-            else
-                local targetSpeed = math.clamp(dist * 10, 100, 200)
-                local targetVelocity = diff.Unit * targetSpeed
-                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVelocity, lerpAlpha)
-            end
-            
-            local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
-            RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
-        else
-            if savedHoverY then
-                local diffY = savedHoverY - RootPart.Position.Y
-                local targetVel = Vector3.new(0, diffY * 50, 0)
-                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVel, lerpAlpha)
-            end
-        end
-    end)
 end)
 
 spawn(function()
@@ -560,7 +616,9 @@ end)
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value or Options.OPFarm.Value then
-            flyTargetPos = nil; isFlying = false; opFarmInitialized = false
+            stopFlying()
+            lockHeight_Y = nil
+            opFarmInitialized = false
             task.wait(0.15); POST:FireServer("Attacks", "Slash_Escape"); btn:Destroy(); task.wait(0.3)
             local bt = getAvailableBossWeakPoint()
             if Options.OPFarm.Value then
@@ -610,5 +668,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Fixed Physics & UI Errors", Duration=5})
+Library:Notify({Title="Loaded", Content="Height Lock System Enabled", Duration=5})
 SaveManager:LoadAutoloadConfig()
