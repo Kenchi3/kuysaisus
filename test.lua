@@ -320,7 +320,7 @@ local function executeStealthSlash(napesArray, isOP)
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                pcall(function() Getremote:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
+                pcall(function() GETremote:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
     end
@@ -336,7 +336,7 @@ local function executeBossBurst(bossPart, burstAmount)
     for i = 1, burstAmount do
         Humanoid.PlatformStand = false
         pcall(function() POSTremote:FireServer("Attacks", "Slash", true) end)
-        pcall(function() Getremote:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
+        pcall(function() GETremote:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
         if Options.OPFarm.Value then Humanoid.PlatformStand = true end
     end
     return true
@@ -372,8 +372,8 @@ local function joinBoostedMission()
     if not bm then Library:Notify({Title="Error", Content="No Boosted Map!", Duration=3}); return false end
     if table.find({"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}, bm) then return false end
     for _, d in ipairs({"Aberrant", "Severe", "Hard", "Normal", "Easy"}) do
-        local s, r = pcall(function() return Getremote:InvokeServer("S_Missions", "Create", {Name = bm, Difficulty = d, Type = "Missions", Objective = "Skirmish"}) end)
-        if s and r then Library:Notify({Title="Success", Content="Joined "..d, Duration=3}); task.wait(1); Getremote:InvokeServer("S_Missions", "Start"); return true end
+        local s, r = pcall(function() return GETremote:InvokeServer("S_Missions", "Create", {Name = bm, Difficulty = d, Type = "Missions", Objective = "Skirmish"}) end)
+        if s and r then Library:Notify({Title="Success", Content="Joined "..d, Duration=3}); task.wait(1); GETremote:InvokeServer("S_Missions", "Start"); return true end
     end
     return false
 end
@@ -573,7 +573,7 @@ spawn(function()
                 local st = Options.UpgradeWeaponType.Value
                 if st == "Blades" or st == "Both" then for _, s in pairs(UPGRADE_STATS.Blades) do table.insert(sl, s) end end
                 if st == "Spears" or st == "Both" then for _, s in pairs(UPGRADE_STATS.Spears) do table.insert(sl, s) end end
-                repeat local sc = 0; for _, sn in pairs(sl) do local s, r = pcall(function() return Getremote:InvokeServer("S_Equipment", "Upgrade", {sn}) end); if s and r then sc = sc+1; task.wait(0.3) else task.wait(0.1) end end; if sc == 0 then break end; task.wait(1) until false
+                repeat local sc = 0; for _, sn in pairs(sl) do local s, r = pcall(function() return GETremote:InvokeServer("S_Equipment", "Upgrade", {sn}) end); if s and r then sc = sc+1; task.wait(0.3) else task.wait(0.1) end end; if sc == 0 then break end; task.wait(1) until false
             end
             if Options.AutoJoinBoosted.Value and tick() - lastJoinAttempt > 5 then lastJoinAttempt = tick(); joinBoostedMission() end
         end
@@ -719,7 +719,7 @@ spawn(function()
                 pcall(function() POSTremote:FireServer("Functions", "Teleport") end); runCounter = 0; ms = false; task.wait(10)
             else
                 if isRaidMap then openRaidChests(); task.wait(1.5) end
-                ms = false; pcall(function() Getremote:InvokeServer("Functions", "Retry", "Add") end); farmingStarted = false; task.wait(6)
+                ms = false; pcall(function() GETremote:InvokeServer("Functions", "Retry", "Add") end); farmingStarted = false; task.wait(6)
             end
         end
     end
