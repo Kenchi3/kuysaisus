@@ -29,9 +29,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
-local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -60,30 +58,31 @@ local opFarmInitialized = false
 local OP_FLY_HEIGHT = 300
 local OP_MAX_TARGETS = 3
 
-local antiGravityConn = nil
+-- [ระบบฟิสิกส์ใหม่]
 local savedHoverY = nil
+local hoverForce = nil
+local hoverAttachment = nil
+local flyTargetPos = nil
+local isFlying = false
+local NoclipConnection = nil
+local physicsConn = nil
 
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
 local function saveRunCount()
     if not isfolder("NonnyHub") then makefolder("NonnyHub") end
     if not isfolder("NonnyHub/game") then makefolder("NonnyHub/game") end
-    pcall(function()
-        local data = { count = runCounter }
-        writefile(runCountFile, HttpService:JSONEncode(data))
-    end)
+    pcall(function() writefile(runCountFile, HttpService:JSONEncode({ count = runCounter })) end)
 end
 
 local function loadRunCount()
     pcall(function()
         if isfile(runCountFile) then
-            local rawData = readfile(runCountFile)
-            local data = HttpService:JSONDecode(rawData)
+            local data = HttpService:JSONDecode(readfile(runCountFile))
             if data and type(data.count) == "number" then runCounter = data.count end
         end
     end)
 end
-
 loadRunCount()
 
 local UPGRADE_STATS = {
@@ -98,94 +97,58 @@ local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
     if not unclimbable then return nil end
     if PlaceId == 14012874501 then
-        local background = unclimbable:FindFirstChild("Background")
-        if background then local npc = background:FindFirstChild("Attack_Titan"); if npc then return npc:IsA("Model") and npc:GetPivot().Position or npc.Position end end
+        local bg = unclimbable:FindFirstChild("Background")
+        if bg then local npc = bg:FindFirstChild("Attack_Titan"); if npc then return npc:IsA("Model") and npc:GetPivot().Position or npc.Position end end
     elseif PlaceId == 13379349730 then
-        local objective = unclimbable:FindFirstChild("Objective")
-        if objective then local boat = objective:FindFirstChild("Boat1"); if boat then return boat:IsA("Model") and boat:GetPivot().Position or boat.Position end end
+        local obj = unclimbable:FindFirstChild("Objective")
+        if obj then local boat = obj:FindFirstChild("Boat1"); if boat then return boat:IsA("Model") and boat:GetPivot().Position or boat.Position end end
     end
     return nil
 end
 
 local function isAnchorPhaseActive()
     if not isRaidMap then return false end
-    
-    -- [แก้ไขหลัก] ถ้าบอสตัวจริงโผล่ใน TitansFolder แล้ว (ไม่ว่าจะ Attack หรือ Armored) แสดงว่าจบ Phase กันเรือแล้ว
     if TitansFolder then
         local activeBoss = TitansFolder:FindFirstChild("Attack_Titan") or TitansFolder:FindFirstChild("Armored_Titan")
-        if activeBoss then
-            local hum = activeBoss:FindFirstChildOfClass("Humanoid")
-            -- ถ้าบอสตัวจริงมีชีวิตอยู่ ให้หลุดจาก Anchor Phase ทันที !!!
-            if hum and hum.Health > 0 then
-                return false
-            end
+        if activeBoss and activeBoss:FindFirstChildOfClass("Humanoid") then
+            if activeBoss.Humanoid.Health > 0 then return false end
         end
     end
-    
-    -- ถ้ายังไม่เจอบอสตัวจริง ค่อยเช็คว่าอยู่ Phase 1 ไหม
     if PlaceId == 14012874501 then
         local unclimbable = workspace:FindFirstChild("Unclimbable")
-        if unclimbable and unclimbable:FindFirstChild("Background") then
-            return unclimbable.Background:FindFirstChild("Attack_Titan") ~= nil
-        end
-        return false
-        
+        return unclimbable and unclimbable:FindFirstChild("Background") and unclimbable.Background:FindFirstChild("Attack_Titan") ~= nil or false
     elseif PlaceId == 13379349730 then
         local unclimbable = workspace:FindFirstChild("Unclimbable")
         if unclimbable and unclimbable:FindFirstChild("Objective") then
             local bossObj = unclimbable.Objective:FindFirstChild("Armored_Boss")
-            if bossObj then
-                return bossObj:GetAttribute("Phase") == 1
-            end
+            return bossObj and bossObj:GetAttribute("Phase") == 1 or false
         end
-        return false
     end
-    
     return false
 end
 
 -- ==========================================
--- [ 3. ฟังก์ชันระบบทำงาน (Stealth Version) ]
+-- [ 3. ฟังก์ชันระบบทำงาน (Physics Safe Version) ]
 -- ==========================================
 local FLY_OFFSET = 150
-local FLY_SPEED = 200
-local isFlying = false
-local NoclipConnection = nil
-local flightConnection = nil 
+
+local function setupHoverForce()
+    if hoverForce then return end
+    hoverAttachment = Instance.new("Attachment", RootPart)
+    hoverForce = Instance.new("VectorForce", RootPart)
+    hoverForce.Attachment0 = hoverAttachment
+    hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
+end
+
+local function cleanupHoverForce()
+    if hoverForce then hoverForce:Destroy(); hoverForce = nil end
+    if hoverAttachment then hoverAttachment:Destroy(); hoverAttachment = nil end
+end
 
 local function stealthFlyTo(targetPos)
     if not RootPart or isFlying then return end 
     isFlying = true
-    Humanoid.PlatformStand = true
-    
-    local goalPos = targetPos + Vector3.new(math.random(-5, 5), FLY_OFFSET + math.random(-2, 2), math.random(-5, 5))
-
-    if flightConnection then flightConnection:Disconnect() end
-    
-    flightConnection = RunService.Heartbeat:Connect(function(dt)
-        if not isFlying then return end
-        
-        local direction = (goalPos - RootPart.Position)
-        local distance = direction.Magnitude
-        
-        if distance < 5 then
-            isFlying = false
-            RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.1
-            
-            if not Options.OPFarm.Value then
-                Humanoid.PlatformStand = false
-            end
-            
-            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-            return
-        end
-
-        local speedFactor = math.clamp(distance / 20, 0.5, 1)
-        local targetVelocity = direction.Unit * (FLY_SPEED * speedFactor)
-        
-        RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.2)
-        RootPart.CFrame = CFrame.lookAt(RootPart.Position, Vector3.new(goalPos.X, RootPart.Position.Y, goalPos.Z))
-    end)
+    flyTargetPos = targetPos + Vector3.new(math.random(-5, 5), FLY_OFFSET + math.random(-2, 2), math.random(-5, 5))
 end
 
 local function findNearestStation()
@@ -209,7 +172,6 @@ end
 
 local lastRefillAttempt = 0
 local REFILL_COOLDOWN = 2.5 
-
 local function safeRefillBlades()
     if tick() - lastRefillAttempt < REFILL_COOLDOWN then return end
     lastRefillAttempt = tick()
@@ -235,26 +197,12 @@ end
 
 local function getAvailableBossWeakPoint()
     if not Options.BossBurst.Value then return nil end
-    local raidBossNames = {"Attack_Titan", "Armored_Titan"}
-    
-    for _, bossName in ipairs(raidBossNames) do
-        if RaidBossWeakPoints[bossName] and RaidBossWeakPoints[bossName].Parent then
-            return RaidBossWeakPoints[bossName]
-        end
-        
+    for _, bossName in ipairs({"Attack_Titan", "Armored_Titan"}) do
+        if RaidBossWeakPoints[bossName] and RaidBossWeakPoints[bossName].Parent then return RaidBossWeakPoints[bossName] end
         local bossModel = TitansFolder and TitansFolder:FindFirstChild(bossName)
-        if bossModel and bossModel:IsA("Model") then
-            local hum = bossModel:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local hb = bossModel:FindFirstChild("Hitboxes")
-                if hb then
-                    local hf = hb:FindFirstChild("Hit")
-                    if hf then
-                        local nape = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart")
-                        if nape then return nape end
-                    end
-                end
-            end
+        if bossModel and bossModel:FindFirstChildOfClass("Humanoid") and bossModel.Humanoid.Health > 0 then
+            local hf = bossModel:FindFirstChild("Hitboxes") and bossModel.Hitboxes:FindFirstChild("Hit")
+            if hf then local nape = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart"); if nape then return nape end end
         end
     end
     return nil
@@ -262,116 +210,106 @@ end
 
 local function getAliveTitanCount()
     local count = 0; if not TitansFolder then return 0 end
-    for _, titan in ipairs(TitansFolder:GetChildren()) do if titan:IsA("Model") then local hum = titan:FindFirstChildOfClass("Humanoid"); if hum and hum.Health > 0 then count = count + 1 end end end
+    for _, t in ipairs(TitansFolder:GetChildren()) do if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then count = count + 1 end end
     return count
 end
 
 local function getTargetsNearAnchor(maxCount, radius)
-    local anchorPos = getRaidAnchorPos()
-    if not anchorPos then return {}, nil end
-    if not TitansFolder then return {}, nil end
-    
+    local ap = getRaidAnchorPos(); if not ap or not TitansFolder then return {}, nil end
     local targets = {}
-    for _, titan in ipairs(TitansFolder:GetChildren()) do
-        if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
-            if tp and (tp.Position - anchorPos).Magnitude <= radius then
-                table.insert(targets, tp)
-            end
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp and (tp.Position - ap).Magnitude <= radius then table.insert(targets, tp) end
         end
     end
-    
-    table.sort(targets, function(a, b)
-        return (a.Position - anchorPos).Magnitude < (b.Position - anchorPos).Magnitude
-    end)
-    
-    local limitedTargets = {}
-    for i = 1, math.min(#targets, maxCount) do
-        table.insert(limitedTargets, targets[i])
-    end
-    
-    return limitedTargets, anchorPos
+    table.sort(targets, function(a, b) return (a.Position - ap).Magnitude < (b.Position - ap).Magnitude end)
+    local lim = {}
+    for i = 1, math.min(#targets, maxCount) do table.insert(lim, targets[i]) end
+    return lim, ap
 end
 
 local function getTargetCluster(maxCount, radius)
-    local closestPart, minDistance, anchorPosition = nil, math.huge, RootPart.Position
-    if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPosition = p end end
+    local cp, md, anchorPos = nil, math.huge, RootPart.Position
+    if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPos = p end end
     if not TitansFolder then return {}, nil end
-    for _, titan in ipairs(TitansFolder:GetChildren()) do
-        if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
-            if tp then local d = (anchorPosition - tp.Position).Magnitude; if d < minDistance then minDistance = d; closestPart = tp end end
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp then local d = (anchorPos - tp.Position).Magnitude; if d < md then md = d; cp = tp end end
         end
     end
-    if not closestPart then return {}, nil end
-    local t, lim = {}, {}
-    for _, titan in ipairs(TitansFolder:GetChildren()) do
-        if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 and titan:FindFirstChild("Hitboxes") then
-            local tp = RaidBossWeakPoints[titan.Name] or (titan.Hitboxes:FindFirstChild("Hit") and titan.Hitboxes.Hit:FindFirstChild("Nape"))
-            if tp and (tp.Position - closestPart.Position).Magnitude <= radius then table.insert(t, tp) end
+    if not cp then return {}, nil end
+    local tgt, lim = {}, {}
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp and (tp.Position - cp.Position).Magnitude <= radius then table.insert(tgt, tp) end
         end
     end
-    table.sort(t, function(a, b) return (a.Position - closestPart.Position).Magnitude < (b.Position - closestPart.Position).Magnitude end)
-    for i = 1, math.min(#t, maxCount) do table.insert(lim, t[i]) end
-    return lim, closestPart.Position
+    table.sort(tgt, function(a, b) return (a.Position - cp.Position).Magnitude < (b.Position - cp.Position).Magnitude end)
+    for i = 1, math.min(#tgt, maxCount) do table.insert(lim, tgt[i]) end
+    return lim, cp.Position
 end
 
 local function getAllTargets()
     local targets = {}; if not TitansFolder then return targets end
-    for _, titan in ipairs(TitansFolder:GetChildren()) do
-        if titan:IsA("Model") and titan:FindFirstChildOfClass("Humanoid") and titan.Humanoid.Health > 0 then
-            local tp = RaidBossWeakPoints[titan.Name]
-            if not tp then local hb = titan:FindFirstChild("Hitboxes"); if hb then local hf = hb:FindFirstChild("Hit"); if hf then tp = hf:FindFirstChild("Nape") or hf:FindFirstChildWhichIsA("BasePart") end end end
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 then
+            local tp = RaidBossWeakPoints[t.Name] or (t:FindFirstChild("Hitboxes") and t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape") or t.Hitboxes.Hit:FindFirstChildWhichIsA("BasePart"))
             if tp then table.insert(targets, tp) end
         end
     end
     return targets
 end
 
-local function performSimulatedClick(x, y)
-    if GuiService.MenuIsOpen then return end
-    pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        task.wait(math.random(50, 150) / 1000)
-        VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 0)
-    end)
-end
-
+-- [ระบบโจมตีปลอดภัย]
 local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
+    
+    -- [ป้องกัน Ban] ปลด PlatformStand เพื่อให้ Animation ของดาบเล่นที่เซิร์ฟเวอร์
+    Humanoid.PlatformStand = false
+    task.wait(0.05)
     
     if not isOP then
         local mainTarget = napesArray[1]
         if mainTarget and mainTarget.Parent then
             pcall(function() workspace.CurrentCamera.CFrame = CFrame.lookAt(workspace.CurrentCamera.CFrame.Position, mainTarget.Position) end)
-            task.wait(math.random(50, 100) / 1000)
+            task.wait(0.05)
         end
     end
 
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
     
-    if Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value and not isOP then
-        task.wait(math.random(50, 100) / 1000)
-    end
+    -- [ป้องกัน Ban] รอให้ดาบสับถึงเป้าหมายก่อน จึงค่อยยิง Hit Register
+    task.wait(0.15)
     
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                task.wait(math.random(1, 3) / 100)
+                -- [ป้องกัน Ban] ยิงแบบสเลปออกไปทีละตัวตามลำดับ ไม่ยิงพร้อมกัน
+                task.wait(i * 0.03 + math.random(10, 30) / 1000)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
         end
     end
+    
+    task.wait(0.2)
+    if isOP then Humanoid.PlatformStand = true end -- กลับเป็นลอยเฉยๆ เมื่อเป็น OP Farm
     return true
 end
 
 local function executeBossBurst(bossPart, burstAmount)
     if not bossPart then return false end
     for i = 1, burstAmount do
-        task.spawn(function()
-            pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-            pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
-        end)
+        -- [ป้องกัน Ban] สลับสถานะทีละรอบ ไม่ใช้ task.spawn พร้อมกัน
+        Humanoid.PlatformStand = false
+        task.wait(0.05)
+        pcall(function() POST:FireServer("Attacks", "Slash", true) end)
+        task.wait(0.1)
+        pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
+        task.wait(0.15)
+        if Options.OPFarm.Value then Humanoid.PlatformStand = true end
     end
     return true
 end
@@ -379,8 +317,8 @@ end
 local function selectAndPressEnter(button)
     if button and button:IsA("GuiButton") then
         GuiService.SelectedObject = button; task.wait(0.3)
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.1)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.2)
+        GuiService:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.1)
+        GuiService:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.2)
         GuiService.SelectedObject = nil
     end
 end
@@ -398,19 +336,16 @@ end
 
 local function isRaidCompleted()
     local inf = Player.PlayerGui:FindFirstChild("Interface"); if not inf then return false end
-    local c, r = inf:FindFirstChild("Chests"), inf:FindFirstChild("Rewards")
-    if c and c.Visible then return true end; if r and r.Visible then return true end; return false
+    return (inf:FindFirstChild("Chests") and inf.Chests.Visible) or (inf:FindFirstChild("Rewards") and inf.Rewards.Visible) or false
 end
 
 local function joinBoostedMission()
-    local boostedMap = Workspace:GetAttribute("Boosted_Map")
-    if not boostedMap then Library:Notify({Title="Error", Content="No Boosted Map found!", Duration=3}); return false end
-    local raidMaps = {"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}
-    if table.find(raidMaps, boostedMap) then Library:Notify({Title="Info", Content="Boosted map is a Raid, skipping...", Duration=3}); return false end
-    local difficulties = {"Aberrant", "Severe", "Hard", "Normal", "Easy"}
-    for _, diff in ipairs(difficulties) do
-        local success, result = pcall(function() return GET:InvokeServer("S_Missions", "Create", {Name = boostedMap, Difficulty = diff, Type = "Missions", Objective = "Skirmish"}) end)
-        if success and result then Library:Notify({Title="Success", Content="Created " .. diff .. " lobby!", Duration=3}); task.wait(1); GET:InvokeServer("S_Missions", "Start"); return true end
+    local bm = Workspace:GetAttribute("Boosted_Map")
+    if not bm then Library:Notify({Title="Error", Content="No Boosted Map!", Duration=3}); return false end
+    if table.find({"Attack Titan", "Armored Titan", "Female Titan", "Colossal Titan"}, bm) then return false end
+    for _, d in ipairs({"Aberrant", "Severe", "Hard", "Normal", "Easy"}) do
+        local s, r = pcall(function() return GET:InvokeServer("S_Missions", "Create", {Name = bm, Difficulty = d, Type = "Missions", Objective = "Skirmish"}) end)
+        if s and r then Library:Notify({Title="Success", Content="Joined "..d, Duration=3}); task.wait(1); GET:InvokeServer("S_Missions", "Start"); return true end
     end
     return false
 end
@@ -423,14 +358,14 @@ Tabs.Main:CreateToggle("AutoUpgrade", { Title = "Auto Upgrade Equipment", Defaul
 Tabs.Main:CreateDropdown("UpgradeWeaponType", { Title = "Weapon Type", Values = {"Blades", "Spears", "Both"}, Default = 1 })
 
 Tabs.Main:CreateSection("Auto Farm (Safe)")
-Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Description = "Risky but Stealthier now!", Default = false })
+Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Default = false })
 Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false })
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
-Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Description = "Simulate Q,E randomly", Default = true })
+Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Default = false }) -- ปิดไว้默认แล้ว
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
-Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius (Slash Range)", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
+Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
@@ -445,15 +380,16 @@ local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", { Title = "Run Progre
 Tabs.Main:CreateInput("MaxRuns", { Title = "Max Runs (0 = Infinite)", Default = "5", Numeric = true, Finished = true })
 Tabs.Main:CreateButton{ Title = "Shadow Ban Check", Callback = function() Library:Notify({ Title = "Shadow Ban Status", Content = Player:GetAttribute("Exploiter") and "⚠️ BANNED" or "✅ SAFE", Duration = 5 }) end }
 Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission", Default = false })
-Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Description = "Fix hidden mouse cursor bug", Default = true })
+Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Loop หลัก (Stealth Version) ]
+-- [ 5. Loop หลัก (Physics Safe Version) ]
 -- ==========================================
 Humanoid.Died:Connect(function()
-    if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-    if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
-    isFlying = false; opFarmInitialized = false; savedHoverY = nil; farmingStarted = false
+    cleanupHoverForce()
+    if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
+    if physicsConn then physicsConn:Disconnect(); physicsConn = nil end
+    isFlying = false; opFarmInitialized = false; savedHoverY = nil; flyTargetPos = nil; farmingStarted = false
     Character = Player.CharacterAdded:Wait()
     RootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
@@ -461,47 +397,32 @@ end)
 
 spawn(function()
     while task.wait(0.5) do
-        local currentCount = runCounter
-        local maxCount = tonumber(Options.MaxRuns.Value) or 0
-        RunDisplay:SetContent(maxCount == 0 and string.format("Current: %d / Max: ∞", currentCount) or string.format("Current: %d / Max: %d", currentCount, maxCount))
+        local cc, mc = runCounter, tonumber(Options.MaxRuns.Value) or 0
+        RunDisplay:SetContent(mc == 0 and string.format("Current: %d / Max: ∞", cc) or string.format("Current: %d / Max: %d", cc, mc))
     end
 end)
 
 spawn(function()
-    local cursorLabel = nil
-    pcall(function() cursorLabel = Player.PlayerGui.Interface.Cursor end)
-    
+    local cl = nil; pcall(function() cl = Player.PlayerGui.Interface.Cursor end)
     while task.wait(0.5) do
-        if Options.MouseFix.Value then
-            pcall(function()
-                if not cursorLabel or not cursorLabel.Parent then
-                    cursorLabel = Player.PlayerGui:FindFirstChild("Interface"):FindFirstChild("Cursor")
-                end
-                if cursorLabel then cursorLabel.Visible = false end
-                UserInputService.MouseIconEnabled = true
-            end)
-        end
+        if Options.MouseFix.Value then pcall(function()
+            if not cl or not cl.Parent then cl = Player.PlayerGui:FindFirstChild("Interface"):FindFirstChild("Cursor") end
+            if cl then cl.Visible = false end
+            UserInputService.MouseIconEnabled = true
+        end) end
     end
 end)
 
 spawn(function()
     while task.wait(2) do
-        local isLobby = Workspace:GetAttribute("Map") == "Lobby"
-        if isLobby then
+        if Workspace:GetAttribute("Map") == "Lobby" then
             if runCounter ~= 0 then runCounter = 0; saveRunCount() end
             if Options.AutoUpgrade.Value then
-                local selectedType = Options.UpgradeWeaponType.Value; local statsList = {}
-                if selectedType == "Blades" or selectedType == "Both" then for _, stat in pairs(UPGRADE_STATS.Blades) do table.insert(statsList, stat) end end
-                if selectedType == "Spears" or selectedType == "Both" then for _, stat in pairs(UPGRADE_STATS.Spears) do table.insert(statsList, stat) end end
-                local upgrading = true
-                while upgrading do
-                    local successCount = 0
-                    for _, statName in pairs(statsList) do
-                        local success, result = pcall(function() return GET:InvokeServer("S_Equipment", "Upgrade", {statName}) end)
-                        if success and result then successCount = successCount + 1; task.wait(0.3) else task.wait(0.1) end
-                    end
-                    if successCount == 0 then upgrading = false end; task.wait(1)
-                end
+                local sl = {}
+                local st = Options.UpgradeWeaponType.Value
+                if st == "Blades" or st == "Both" then for _, s in pairs(UPGRADE_STATS.Blades) do table.insert(sl, s) end end
+                if st == "Spears" or st == "Both" then for _, s in pairs(UPGRADE_STATS.Spears) do table.insert(sl, s) end end
+                repeat local sc = 0; for _, sn in pairs(sl) do local s, r = pcall(function() return GET:InvokeServer("S_Equipment", "Upgrade", {sn}) end); if s and r then sc = sc+1; task.wait(0.3) else task.wait(0.1) end end; if sc == 0 then break end; task.wait(1) until false
             end
             if Options.AutoJoinBoosted.Value and tick() - lastJoinAttempt > 5 then lastJoinAttempt = tick(); joinBoostedMission() end
         end
@@ -513,159 +434,84 @@ spawn(monitorRaidBosses)
 spawn(function()
     while task.wait(0.1) do
         if not Options.Autofarm.Value and not Options.OPFarm.Value then 
-            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-            if antiGravityConn then antiGravityConn:Disconnect(); antiGravityConn = nil end
-            isFlying = false; opFarmInitialized = false; savedHoverY = nil; Humanoid.PlatformStand = false; RootPart.Anchored = false; farmingStarted = false
-            if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil
-                if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
-            end
+            cleanupHoverForce()
+            if NoclipConnection then NoclipConnection:Disconnect(); NoclipConnection = nil end
+            isFlying = false; opFarmInitialized = false; savedHoverY = nil; flyTargetPos = nil; Humanoid.PlatformStand = false; farmingStarted = false
+            if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
             continue 
         end
 
-        if not antiGravityConn then
-            antiGravityConn = RunService.Heartbeat:Connect(function()
-                if RootPart and not RootPart.Anchored and (Options.Autofarm.Value or Options.OPFarm.Value) then
-                    if isFlying then return end
-                    local currentVel = RootPart.AssemblyLinearVelocity
-                    if savedHoverY then
-                        local diff = savedHoverY - RootPart.Position.Y
-                        RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, diff * 5, currentVel.Z)
-                    else
-                        RootPart.AssemblyLinearVelocity = Vector3.new(currentVel.X, math.clamp(currentVel.Y, -5, 100), currentVel.Z)
-                    end
-                end
-            end)
-        end
-
-        local success, skipGui = pcall(function() return Player.PlayerGui.Interface.Skip end)
-        if success and skipGui and skipGui.Visible then
-            local ib = skipGui:FindFirstChild("Interact")
-            if ib and ib:IsA("GuiButton") then
-                task.wait(math.random(100, 300)/1000)
-                GuiService.SelectedObject = ib; task.wait(0.1)
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game); task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game); task.wait(0.1)
-                GuiService.SelectedObject = nil
-            end
-        end
-
+        -- [ระบบฟิสิกส์ใหม่] สร้าง Force และ Connection ถ้ายังไม่มี
+        if not hoverForce then setupHoverForce() end
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
-                if Character and (Options.Autofarm.Value or Options.OPFarm.Value) then
-                    for _, p in pairs(Character:GetDescendants()) do
-                        if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
-                    end
-                end
+                if Character then for _, p in pairs(Character:GetDescendants()) do if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end end end
             end)
         end
 
-        local currentBossTarget = getAvailableBossWeakPoint()
-        local aliveCount = getAliveTitanCount()
-        local isLastPhase = aliveCount <= LAST_TITAN_THRESHOLD
-        local canKill = true
-
-        if Options.UseMissionTimer.Value and isLastPhase then
-            local minTime = tonumber(Options.MinMissionTime.Value) or 60
+        local bt = getAvailableBossWeakPoint()
+        local ac = getAliveTitanCount()
+        local ck = true
+        if Options.UseMissionTimer.Value and ac <= LAST_TITAN_THRESHOLD then
+            local mt = tonumber(Options.MinMissionTime.Value) or 60
             if not farmingStarted then farmingStarted = true; fallbackStartTime = tick() end
-            local gameTime = Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)
-            canKill = gameTime >= minTime
+            ck = (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)) >= mt
         end
 
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-            isFlying = false; Humanoid.PlatformStand = true
-            
-            local anchorPos = getRaidAnchorPos()
+            flyTargetPos = nil -- ไม่ใช้ stealthFlyTo ใน OP Mode
+            Humanoid.PlatformStand = true
+            local ap = getRaidAnchorPos()
             
             if not opFarmInitialized then
-                savedHoverY = (anchorPos and (anchorPos.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
-                RootPart.AssemblyLinearVelocity = Vector3.new(0, 100, 0)
+                savedHoverY = (ap and (ap.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
                 opFarmInitialized = true
             end
             
-            if isBladeEmpty() then 
-                safeRefillBlades()
-                task.wait(1) 
-                continue 
-            end
+            if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
 
-            -- [เช็ค Phase ก่อนเข้าโหมดกันเรือ]
-            if isAnchorPhaseActive() and anchorPos then
-                local hoverGoal = anchorPos + Vector3.new(0, FLY_OFFSET, 0)
-                local dir = (hoverGoal - RootPart.Position)
-                if dir.Magnitude > 15 then
-                    RootPart.AssemblyLinearVelocity = dir.Unit * 150
-                end
-                
-                local limit = Options.TargetLimit.Value 
-                local radius = Options.AoERadius.Value
-                local nearbyTargets = getTargetsNearAnchor(limit, radius)
-                
-                if #nearbyTargets > 0 then
-                    if canKill then executeStealthSlash(nearbyTargets, true) end
-                end
+            if isAnchorPhaseActive() and ap then
+                flyTargetPos = ap + Vector3.new(0, FLY_OFFSET, 0) -- ใช้ Force บินไปหา Anchor
+                local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
+                if #nt > 0 and ck then executeStealthSlash(nt, true) end
             else
-                -- [Phase 2 หรือไม่มี Anchor] ทำตามปกติ
-                if currentBossTarget then
-                    executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
+                flyTargetPos = nil
+                if bt then executeBossBurst(bt, Options.BurstAmount.Value)
                 else
-                    local allTargets = getAllTargets()
-                    local limitedTargets = {}; for i = 1, math.min(#allTargets, OP_MAX_TARGETS) do table.insert(limitedTargets, allTargets[i]) end
-                    if #limitedTargets > 0 then
-                        if canKill then executeStealthSlash(limitedTargets, true) end
-                    end
+                    local at = getAllTargets(); local lt = {}; for i = 1, math.min(#at, OP_MAX_TARGETS) do table.insert(lt, at[i]) end
+                    if #lt > 0 and ck then executeStealthSlash(lt, true) end
                 end
             end
             task.wait(1); continue 
         end
 
         if Options.Autofarm.Value then
-            opFarmInitialized = false; RootPart.Anchored = false 
-            Humanoid.PlatformStand = false 
-            
-            if isBladeEmpty() then 
-                if not savedHoverY then savedHoverY = RootPart.CFrame.Y end 
-                safeRefillBlades(); task.wait(1); continue
-            end
-            
+            opFarmInitialized = false; Humanoid.PlatformStand = false 
+            if isBladeEmpty() then if not savedHoverY then savedHoverY = RootPart.CFrame.Y end safeRefillBlades(); task.wait(1); continue end
             savedHoverY = nil
             
-            -- [เช็ค Phase ก่อนเข้าโหมดกันเรือ]
             if isAnchorPhaseActive() then
-                local anchorPos = getRaidAnchorPos()
-                if anchorPos then
-                    if (RootPart.Position - anchorPos).Magnitude > 40 then
-                        stealthFlyTo(anchorPos)
-                        while isFlying do task.wait(0.05) end
-                    end
-                    
-                    local limit = Options.TargetLimit.Value 
-                    local radius = Options.AoERadius.Value
-                    local nearbyTargets = getTargetsNearAnchor(limit, radius)
-                    
-                    if #nearbyTargets > 0 then
-                        if canKill then executeStealthSlash(nearbyTargets, false) end
+                local ap = getRaidAnchorPos()
+                if ap then
+                    if (RootPart.Position - ap).Magnitude > 40 then stealthFlyTo(ap); while isFlying do task.wait(0.05) end end
+                    local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
+                    if #nt > 0 then
+                        if ck then executeStealthSlash(nt, false) end
                         task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
-                    else
-                        task.wait(0.5)
-                    end
+                    else task.wait(0.5) end
                     continue 
                 end
             end
             
-            -- [Phase 2 หรือไม่มี Anchor] ทำตามปกติ
-            if currentBossTarget then
-                stealthFlyTo(currentBossTarget.Position)
-                while isFlying do task.wait(0.05) end
-                if canKill then executeBossBurst(currentBossTarget, Options.BurstAmount.Value) end
+            if bt then
+                stealthFlyTo(bt.Position); while isFlying do task.wait(0.05) end
+                if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
                 task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
             else
-                local limit = Options.TargetLimit.Value; local radius = Options.AoERadius.Value
-                local targets, anchorPos = getTargetCluster(limit, radius)
-                if #targets > 0 and anchorPos then
-                    stealthFlyTo(anchorPos)
-                    while isFlying do task.wait(0.05) end
-                    if canKill then executeStealthSlash(targets, false) end
+                local t, ap = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
+                if #t > 0 and ap then
+                    stealthFlyTo(ap); while isFlying do task.wait(0.05) end
+                    if ck then executeStealthSlash(t, false) end
                     task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
                 else task.wait(0.5) end
             end
@@ -673,80 +519,82 @@ spawn(function()
     end
 end)
 
+-- [ระบบ Heartbeat ควบคุม VectorForce แทน Velocity]
 spawn(function()
-    while task.wait(0.1) do
-        if Options.UseMissionTimer.Value then
-            local minTime = tonumber(Options.MinMissionTime.Value) or 60
-            local gameTime = Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)
-            local remaining = minTime - gameTime
-            TimerDisplay:SetContent(remaining > 0 and string.format("%02d:%02d", math.floor(remaining / 60), math.floor(remaining % 60)) or "Ready!")
-        else TimerDisplay:SetContent("--:--") end
-    end
+    physicsConn = RunService.Heartbeat:Connect(function()
+        if not hoverForce or not RootPart then return end
+        if not Options.Autofarm.Value and not Options.OPFarm.Value then return end
+        
+        local mass = RootPart.AssemblyMass
+        
+        if flyTargetPos then
+            local diff = flyTargetPos - RootPart.Position
+            local dist = diff.Magnitude
+            if dist < 5 then
+                isFlying = false
+                flyTargetPos = nil
+                hoverForce.Force = Vector3.new(0, mass * workspace.Gravity, 0) -- ค้างลอยเฉยๆ เมื่อถึงจุดหมาย
+            else
+                RootPart.CFrame = CFrame.lookAt(RootPart.Position, Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z))
+                -- ใช้สูตร F = m * a คำนวณแรงเร่งตัวอย่างเป็นธรรมชาติ
+                local forceStrength = math.clamp(dist * 8, 500, 8000)
+                hoverForce.Force = diff.Unit * mass * forceStrength
+            end
+        else
+            if savedHoverY then
+                local diffY = savedHoverY - RootPart.Position.Y
+                hoverForce.Force = Vector3.new(0, diffY * mass * 50, 0)
+            else
+                -- ลอยเฉยๆ โดยหยุดแรงโน้มถ่วงทับลงไปทุกเฟรมอย่างแม่นยำ
+                hoverForce.Force = Vector3.new(0, mass * workspace.Gravity, 0)
+            end
+        end
+    end)
 end)
 
 spawn(function()
-    while task.wait(math.random(5, 15)) do
-        if Options.Autofarm.Value and Options.EnableAntiCheatActions and Options.EnableAntiCheatActions.Value then
-            pcall(function()
-                local k = (math.random(1, 2) == 1) and Enum.KeyCode.Q or Enum.KeyCode.E
-                VirtualInputManager:SendKeyEvent(true, k, false, game); task.wait(math.random(100, 500) / 1000)
-                VirtualInputManager:SendKeyEvent(false, k, false, game)
-            end)
-        end
+    while task.wait(0.1) do
+        if Options.UseMissionTimer.Value then
+            local rem = (tonumber(Options.MinMissionTime.Value) or 60) - (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime))
+            TimerDisplay:SetContent(rem > 0 and string.format("%02d:%02d", math.floor(rem / 60), math.floor(rem % 60)) or "Ready!")
+        else TimerDisplay:SetContent("--:--") end
     end
 end)
 
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value or Options.OPFarm.Value then
-            if flightConnection then flightConnection:Disconnect(); flightConnection = nil end
-            isFlying = false; opFarmInitialized = false; RootPart.Anchored = false
+            flyTargetPos = nil; isFlying = false; opFarmInitialized = false
             task.wait(0.15); POST:FireServer("Attacks", "Slash_Escape"); btn:Destroy(); task.wait(0.3)
-            local currentBossTarget = getAvailableBossWeakPoint()
+            local bt = getAvailableBossWeakPoint()
             if Options.OPFarm.Value then
-                if currentBossTarget then executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
-                else local t = getAllTargets(); local l = {}; for i = 1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end; if #l > 0 then executeStealthSlash(l, true) end end
+                if bt then executeBossBurst(bt, Options.BurstAmount.Value)
+                else local t = getAllTargets(); local l = {}; for i=1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end; if #l>0 then executeStealthSlash(l, true) end end
             else
-                if currentBossTarget then executeBossBurst(currentBossTarget, Options.BurstAmount.Value)
-                else local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value); if #t > 0 then executeStealthSlash(t, false) end end
+                if bt then executeBossBurst(bt, Options.BurstAmount.Value)
+                else local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value); if #t>0 then executeStealthSlash(t, false) end end
             end
         end
     end)
 end
 
 spawn(function()
-    local missionstarted = false 
+    local ms = false 
     while task.wait(2) do
         if not Options.AutoRetry.Value then continue end
-        
-        if not missionstarted and getAliveTitanCount() > 0 then 
-            missionstarted = true 
+        if not ms and getAliveTitanCount() > 0 then ms = true end
+        local sp = false
+        if ms and Workspace:GetAttribute("Map") ~= "Lobby" then
+            sp = isRaidMap and isRaidCompleted() or getAliveTitanCount() == 0
         end
-        
-        local shouldProcess = false
-        if missionstarted and Workspace:GetAttribute("Map") ~= "Lobby" then
-            if isRaidMap then
-                shouldProcess = isRaidCompleted()
-            else
-                shouldProcess = getAliveTitanCount() == 0
-            end
-        end
-
-        if shouldProcess then
+        if sp then
             runCounter = runCounter + 1; saveRunCount()
-            local maxRuns = tonumber(Options.MaxRuns.Value) or 0
-            
-            if maxRuns > 0 and runCounter >= maxRuns then
-                pcall(function() POST:FireServer("Functions", "Teleport") end)
-                runCounter = 0; missionstarted = false; task.wait(10)
+            local mr = tonumber(Options.MaxRuns.Value) or 0
+            if mr > 0 and runCounter >= mr then
+                pcall(function() POST:FireServer("Functions", "Teleport") end); runCounter = 0; ms = false; task.wait(10)
             else
-                if isRaidMap then 
-                    openRaidChests(); task.wait(1.5) 
-                end
-                
-                missionstarted = false 
-                pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end)
-                farmingStarted = false; task.wait(6)
+                if isRaidMap then openRaidChests(); task.wait(1.5) end
+                ms = false; pcall(function() GET:InvokeServer("Functions", "Retry", "Add") end); farmingStarted = false; task.wait(6)
             end
         end
     end
@@ -766,5 +614,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Stealth Version Applied!", Duration=5})
+Library:Notify({Title="Loaded", Content="Physics Safe Version!", Duration=5})
 SaveManager:LoadAutoloadConfig()
