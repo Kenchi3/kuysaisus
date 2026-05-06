@@ -33,6 +33,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local Character = Player.Character or Player.CharacterAdded:Wait()
@@ -444,6 +445,7 @@ local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", { Title = "Run Progre
 Tabs.Main:CreateInput("MaxRuns", { Title = "Max Runs (0 = Infinite)", Default = "5", Numeric = true })
 Tabs.Main:CreateButton{ Title = "Shadow Ban Check", Callback = function() Library:Notify({ Title = "Shadow Ban Status", Content = Player:GetAttribute("Exploiter") and "⚠️ BANNED" or "✅ SAFE", Duration = 5 }) end }
 Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission", Default = false })
+Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Description = "Fix hidden mouse cursor bug", Default = false })
 
 -- ==========================================
 -- [ 5. Loop หลัก (Stealth Version) ]
@@ -462,6 +464,23 @@ spawn(function()
         local currentCount = runCounter
         local maxCount = tonumber(Options.MaxRuns.Value) or 0
         RunDisplay:SetContent(maxCount == 0 and string.format("Current: %d / Max: ∞", currentCount) or string.format("Current: %d / Max: %d", currentCount, maxCount))
+    end
+end)
+
+spawn(function()
+    local cursorLabel = nil
+    pcall(function() cursorLabel = Player.PlayerGui.Interface.Cursor end)
+    
+    while task.wait(0.5) do
+        if Options.MouseFix.Value then
+            pcall(function()
+                if not cursorLabel or not cursorLabel.Parent then
+                    cursorLabel = Player.PlayerGui:FindFirstChild("Interface"):FindFirstChild("Cursor")
+                end
+                if cursorLabel then cursorLabel.Visible = false end
+                UserInputService.MouseIconEnabled = true
+            end)
+        end
     end
 end)
 
