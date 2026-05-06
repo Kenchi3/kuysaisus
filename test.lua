@@ -39,8 +39,8 @@ local RootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
 local Remotes = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
-local PostRemote = Remotes:WaitForChild("s")
-local GetRemote = Remotes:WaitForChild("s")
+local PostRemote = Remotes:WaitForChild("POST")
+local GetRemote = Remotes:WaitForChild("GET")
 local TitansFolder = Workspace:FindFirstChild("Titans")
 local ButtonsFolder = Player:WaitForChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
 
