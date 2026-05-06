@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "Hook Physics v3 (Height Lock)",
+    SubTitle = "Hook Physics v4 (Safe Above Head)",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -63,10 +63,12 @@ local savedHoverY = nil
 local flyTargetPos = nil
 local isFlying = false
 local physicsConn = nil
-local lockHeight_Y = nil -- ตัวแปรสำหรับล๊อคความสูงในโหมด Normal Farm
+local lockHeight_Y = nil
+local SAFE_FARM_HOVER_HEIGHT = 15 -- ความสูงเหนือหัวไททัน
 
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
+-- [Function: Save/Load Run Count]
 local function saveRunCount()
     if not isfolder("NonnyHub") then makefolder("NonnyHub") end
     if not isfolder("NonnyHub/game") then makefolder("NonnyHub/game") end
@@ -254,7 +256,6 @@ local function executeStealthSlash(napesArray, isOP)
     end
 
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-    
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
@@ -262,14 +263,9 @@ local function executeStealthSlash(napesArray, isOP)
             end)
         end
     end
-
-    -- [แก้ไข] ถ้าเป็น Normal Farm ให้เปิด PlatformStand ทันทีหลังโจมตีเพื่อไม่ให้ตก
-    if isOP then 
-        Humanoid.PlatformStand = true 
-    else
-        if Options.Autofarm.Value then
-            Humanoid.PlatformStand = true
-        end
+    
+    if isOP or Options.Autofarm.Value then -- ให้ Normal Farm ก็ PlatformStand หลังฟันเพื่อลอยตัวต่อ
+        Humanoid.PlatformStand = true
     end
     return true
 end
@@ -355,7 +351,7 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Hook Physics Engine & Noclip ]
+-- [ 5. Hook Physics Engine v4 ]
 -- ==========================================
 
 -- [ระบบ Noclip]
@@ -376,7 +372,7 @@ local function hookFlyTo(targetPos)
     if not RootPart then return end
     isFlying = true
     flyTargetPos = targetPos
-    lockHeight_Y = nil -- ปลดล๊อคความสูงเมื่อเริ่มบินใหม่
+    lockHeight_Y = nil 
     Humanoid.PlatformStand = true
 end
 
@@ -394,37 +390,52 @@ spawn(function()
         
         if Options.Autofarm.Value or Options.OPFarm.Value then
             
-            -- [สถานะ 1: บินไปเป้าหมาย]
+            -- [สถานะ 1: บินไปเป้าหมาย (Smart Approach)]
             if isFlying and flyTargetPos then
                 local direction = (flyTargetPos - RootPart.Position)
                 local dist = direction.Magnitude
                 
-                -- คำนวณความสูง (Arc)
-                local heightBoost = math.clamp(dist / 2, 0, 150) 
-                local adjustedTarget = Vector3.new(flyTargetPos.X, flyTargetPos.Y + heightBoost, flyTargetPos.Z)
+                -- [Logic: Safe Farm Above Head]
+                -- ถ้าเป็น Normal Farm ให้เป้าหมายสูงกว่าปกติ 15 หน่วย
+                local finalTarget = flyTargetPos
+                if Options.Autofarm.Value then
+                    finalTarget = flyTargetPos + Vector3.new(0, SAFE_FARM_HOVER_HEIGHT, 0)
+                end
                 
-                local targetDir = (adjustedTarget - RootPart.Position).Unit
-                local targetSpeed = math.clamp(dist * 5, 50, 300)
+                local distToFinal = (finalTarget - RootPart.Position).Magnitude
                 
-                local targetVelocity = targetDir * targetSpeed
-                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.2)
+                -- คำนวณความเร็วแบบ Smooth Deceleration
+                -- ยิ่งใกล้ยิ่งช้า (Linear Interpolation of Speed)
+                -- Max Speed 200, Min Speed 10, Braking Distance 100
+                local speedFactor = math.clamp((distToFinal / 100) * 200, 10, 200)
                 
-                -- ถึงเป้าหมาย
-                if dist < 10 then
+                -- คำนวณทิศทาง
+                local targetDir = (finalTarget - RootPart.Position).Unit
+                local targetVelocity = targetDir * speedFactor
+                
+                -- ปรับ Velocity แบบนุ่มนวล (Lerp)
+                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.1)
+                
+                -- หันหน้าไปทางเป้าหมาย (Look at X,Z of target)
+                local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
+                if (RootPart.Position - lookTarget).Magnitude > 1 then
+                    RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
+                end
+                
+                -- ถึงเป้าหมาย (รัศมี 5 หน่วย)
+                if distToFinal < 5 then
                     isFlying = false
                     flyTargetPos = nil
                     
                     -- [Logic ล๊อคความสูง]
                     if Options.Autofarm.Value then
-                         lockHeight_Y = RootPart.Position.Y -- จำความสูงตอนนี้ไว้
+                         lockHeight_Y = RootPart.Position.Y 
                     end
                     
-                    RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.3
+                    -- หยุดนิ่งเบาๆ
+                    RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.5
                     return
                 end
-                
-                local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
-                RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
             
             -- [สถานะ 2: Hover แบบ OP Farm]
             elseif savedHoverY then
@@ -432,11 +443,11 @@ spawn(function()
                 local targetVel = Vector3.new(0, diffY * 50, 0)
                 RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.1)
             
-            -- [สถานะ 3: ล๊อคความสูง Normal Farm]
+            -- [สถานะ 3: ล๊อคความสูง Normal Farm (Floating Above Head)]
             elseif lockHeight_Y and Options.Autofarm.Value then
                 Humanoid.PlatformStand = true
                 local diffY = lockHeight_Y - RootPart.Position.Y
-                -- ใช้ Velocity เพื่อรักษาตำแหน่งแกน Y และหยุดการเคลื่อนไหวแนวนอน
+                -- ใช้ Velocity เพื่อรักษาตำแหน่งแกน Y และหยุด X,Z
                 local targetVel = Vector3.new(0, diffY * 50, 0)
                 RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.15)
                 
@@ -445,7 +456,6 @@ spawn(function()
                  if Options.OPFarm.Value then
                     Humanoid.PlatformStand = true
                  else
-                    -- ถ้าไม่มี lockHeight จะปิด PlatformStand (แต่ถ้าเปิด Normal Farm ควรจะมี lockHeight เสมอ)
                     if not Options.Autofarm.Value then
                         Humanoid.PlatformStand = false
                     end
@@ -531,7 +541,7 @@ spawn(function()
         end
 
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            lockHeight_Y = nil -- ปิดล๊อคความสูงแบบ Normal
+            lockHeight_Y = nil 
             stopFlying() 
             Humanoid.PlatformStand = true
             local ap = getRaidAnchorPos()
@@ -565,7 +575,7 @@ spawn(function()
         end
 
         if Options.Autofarm.Value then
-            savedHoverY = nil -- ปิด Hover แบบ OP
+            savedHoverY = nil 
             opFarmInitialized = false
             
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
@@ -668,5 +678,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Height Lock System Enabled", Duration=5})
+Library:Notify({Title="Loaded", Content="Safe Farm: Above Head Mode Enabled", Duration=5})
 SaveManager:LoadAutoloadConfig()
