@@ -363,7 +363,6 @@ Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
-Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Default = false }) -- ปิดไว้默认แล้ว
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
