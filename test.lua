@@ -135,7 +135,7 @@ local FLY_OFFSET = 150
 local function setupHoverForce()
     if hoverForce then return end
     hoverAttachment = Instance.new("Attachment", RootPart)
-    hoverForce = Instance.new("VectorForce", RootPart)
+    hoverForce = Instance.new("LinearVelocity", RootPart)
     hoverForce.Attachment0 = hoverAttachment
     hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
     -- [สำคัญมาก] ใช้ค่า MaxForce ตามค่าเริ่มต้นของ Humanoid ไม่ใช่ math.huge
