@@ -340,8 +340,8 @@ Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
-Tabs.Main:CreateToggle("UseMissionTimer", { Title = "Hybrid Time Guard", Default = false })
-Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "60", Numeric = true, Finished = true })
+Tabs.Main:CreateToggle("UseMissionTimer", { Title = "Hybrid Time Guard", Default = true })
+Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)", Default = "33", Numeric = true, Finished = true })
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", { Title = "Timer Status", Content = "Status: Idle" })
 
 Tabs.Main:CreateSection("Misc")
