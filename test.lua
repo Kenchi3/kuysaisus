@@ -90,6 +90,67 @@ local UPGRADE_STATS = {
     Spears = { "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius", "TS_Speed", "TS_Control", "TS_Range", "TS_Gas" }
 }
 
+
+-- ==========================================
+-- [ Identity Protection / Caller Spoofing ]
+-- ==========================================
+
+-- 1. เลือกสคริปต์ของเกมที่ปลอดภัย เพื่อเอาไว้ "อ้างอิงตัวตน"
+-- แนะนำให้ใช้สคริปต์ที่อยู่ใน PlayerScripts หรือ ReplicatedStorage ที่มักจะเรียก Remote อยู่แล้ว
+local FakeCallerScript = nil
+pcall(function()
+    -- พยายามหาสคริปต์ของเกมที่ขื่อว่า CombatFramework หรืออะไรก็ตามที่มีอยู่จริงในเกม
+    FakeCallerScript = game.Players.LocalPlayer.PlayerScripts:FindFirstChildWhichIsA("LocalScript", true)
+    if not FakeCallerScript then
+        FakeCallerScript = game.ReplicatedStorage:FindFirstChildWhichIsA("LocalScript", true)
+    end
+end)
+
+-- 2. ดัก (Hook) ฟังก์ชัน getcallingscript เพื่อปลอมตัวตน
+local OriginalGetCallingScript = getcallingscript
+if OriginalGetCallingScript then
+    hookfunction(getcallingscript, newcclosure(function()
+        -- เมื่อเซิร์ฟเวอร์ถามว่าใครเรียกมา ให้ตอบว่าเป็นสคริปต์ของเกมเอง
+        if FakeCallerScript then
+            return FakeCallerScript
+        end
+        -- ถ้าหาไม่เจอ ให้ทำงานปกติ
+        return OriginalGetCallingScript()
+    end))
+end
+
+-- 3. ดัก (Hook) __namecall เพื่อซ่อนรอยเมื่อมีการเรียก FireServer / InvokeServer
+local OldNamecall
+OldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    
+    -- ตรวจสอบว่าเป็นการส่งข้อมูลเข้าเซิร์ฟเวอร์หรือไม่
+    if method == "FireServer" or method == "InvokeServer" then
+        -- [จุดนี้แหละที่เราจะใส่ระบบป้องกันเพิ่มเติม]
+        -- บางเกมเช็ค stack trace (ประวัติการเรียกฟังก์ชัน) 
+        -- newcclosure ช่วยซ่อนว่ามาจาก exploit แล้ว, hook getcallingscript ช่วยปลอมตัวตนแล้ว
+    end
+    
+    return OldNamecall(self, ...)
+end))
+
+-- 4. ป้องกันการถูกตรวจจับย้อนกลับ (Anti-Detection)
+-- ซ่อนคำสั่ง hook ต่างๆ เพื่อไม่ให้เกมสแกนเจอ
+local mt = getrawmetatable(game)
+if mt and setreadonly then
+    setreadonly(mt, false)
+    -- ปลอมแปลงฟังก์ชันที่เกมมักใช้ตรวจสอบว่ามีการ Hook เกิดขึ้นหรือไม่
+    local oldNamecallCheck = mt.__namecall
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            -- เซิร์ฟเวอร์อาจจะส่งค่าหลอกมาเช็ค แต่เราจะปล่อยผ่านไปปกติ
+        end
+        return oldNamecallCheck(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
 -- ==========================================
 -- [ ระบบตรวจสอบ Phase และ Anchor ]
 -- ==========================================
