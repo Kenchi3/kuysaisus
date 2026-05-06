@@ -282,7 +282,7 @@ local function executeStealthSlash(napesArray, isOP)
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
     
     -- [ป้องกัน Ban] รอให้ดาบสับถึงเป้าหมายก่อน จึงค่อยยิง Hit Register
-    task.wait(0.15)
+    task.wait(0.07)
     
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
