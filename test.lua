@@ -138,9 +138,9 @@ local function setupHoverForce()
     hoverForce = Instance.new("LinearVelocity", RootPart)
     hoverForce.Attachment0 = hoverAttachment
     hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
-    -- [สำคัญมาก] ใช้ค่า MaxForce ตามค่าเริ่มต้นของ Humanoid ไม่ใช่ math.huge
-    hoverForce.MaxForce = Vector3.new(40000, 40000, 40000) 
-    hoverForce.Velocity = Vector3.new(0, 0, 0)
+    -- [สำคัญมากสำหรับ LinearVelocity]
+    hoverForce.MaxAxes = Vector3.new(40000, 40000, 40000)
+    hoverForce.EraseUndeflectedForces = Enum.EraseUndefinedForces.Always
 end
 
 local function cleanupHoverForce()
@@ -522,6 +522,7 @@ spawn(function()
 end)
 
 -- [ระบบ Heartbeat ควบคุม VectorForce เลียนแบบโมดูล Momentum & Freefall ของเกมจริง]
+-- [ระบบ Heartbeat ควบคุม VectorForce เลียนแบบโมดูล Momentum & Freefall ของเกมจริง]
 spawn(function()
     physicsConn = RunService.Heartbeat:Connect(function(dt)
         if not hoverForce or not RootPart then return end
@@ -538,12 +539,12 @@ spawn(function()
                 isFlying = false
                 flyTargetPos = nil
                 -- [เลียนแบบ Freefall] เมื่อถึงจุดหมาย Lerp Velocity กลับเป็น 0 อย่างนุ่มนวล
-                hoverForce.Velocity = hoverForce.Velocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
+                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
             else
                 -- [เลียนแบบ Momentum] คำนวณความเร็วตามระยะทาง (ยิ่งใกล้ยิ่งช้า ยิ่งไกลยิ่งเร็ว)
                 local targetSpeed = math.clamp(dist * 10, 100, 200)
                 local targetVelocity = diff.Unit * targetSpeed
-                hoverForce.Velocity = hoverForce.Velocity:Lerp(targetVelocity, lerpAlpha)
+                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVelocity, lerpAlpha)
             end
             
             -- หันหน้าไปทางเป้าหมายเพื่อให้ Raycast Hit ถูกต้อง
@@ -554,10 +555,8 @@ spawn(function()
                 -- [เลียนแบบ ODM Hover] ใช้ Velocity ดันตัวเองขึ้นลงเหมือนกด Gas
                 local diffY = savedHoverY - RootPart.Position.Y
                 local targetVel = Vector3.new(0, diffY * 50, 0)
-                hoverForce.Velocity = hoverForce.Velocity:Lerp(targetVel, lerpAlpha)
+                hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVel, lerpAlpha)
             else
-                -- [เลียนแบบ Freefall ปกติ] หยุดตัวนิ่งๆ โดยไม่ต้องล็อคแกน Y
-                hoverForce.Velocity = hoverForce.Velocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
             end
         end
     end)
