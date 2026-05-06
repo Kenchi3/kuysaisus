@@ -58,7 +58,7 @@ local opFarmInitialized = false
 local OP_FLY_HEIGHT = 300
 local OP_MAX_TARGETS = 3
 
--- [ระบบฟิสิกส์ใหม่]
+-- [ระบบฟิสิกส์]
 local savedHoverY = nil
 local hoverForce = nil
 local hoverAttachment = nil
@@ -128,7 +128,7 @@ local function isAnchorPhaseActive()
 end
 
 -- ==========================================
--- [ 3. ฟังก์ชันระบบทำงาน (Physics Safe Version) ]
+-- [ 3. ฟังก์ชันระบบทำงาน (Momentum Physics Version) ]
 -- ==========================================
 local FLY_OFFSET = 150
 
@@ -138,6 +138,9 @@ local function setupHoverForce()
     hoverForce = Instance.new("VectorForce", RootPart)
     hoverForce.Attachment0 = hoverAttachment
     hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
+    -- [สำคัญมาก] ใช้ค่า MaxForce ตามค่าเริ่มต้นของ Humanoid ไม่ใช่ math.huge
+    hoverForce.MaxForce = Vector3.new(40000, 40000, 40000) 
+    hoverForce.Velocity = Vector3.new(0, 0, 0)
 end
 
 local function cleanupHoverForce()
@@ -282,7 +285,7 @@ local function executeStealthSlash(napesArray, isOP)
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
     
     -- [ป้องกัน Ban] รอให้ดาบสับถึงเป้าหมายก่อน จึงค่อยยิง Hit Register
-    task.wait(0.07)
+    task.wait(0.15)
     
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
@@ -295,7 +298,7 @@ local function executeStealthSlash(napesArray, isOP)
     end
     
     task.wait(0.2)
-    if isOP then Humanoid.PlatformStand = true end -- กลับเป็นลอยเฉยๆ เมื่อเป็น OP Farm
+    if isOP then Humanoid.PlatformStand = true end
     return true
 end
 
@@ -363,6 +366,7 @@ Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
+Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Default = false }) 
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
@@ -382,7 +386,7 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Loop หลัก (Physics Safe Version) ]
+-- [ 5. Loop หลัก (Momentum Physics Version) ]
 -- ==========================================
 Humanoid.Died:Connect(function()
     cleanupHoverForce()
@@ -440,7 +444,6 @@ spawn(function()
             continue 
         end
 
-        -- [ระบบฟิสิกส์ใหม่] สร้าง Force และ Connection ถ้ายังไม่มี
         if not hoverForce then setupHoverForce() end
         if not NoclipConnection then
             NoclipConnection = RunService.Stepped:Connect(function()
@@ -458,7 +461,7 @@ spawn(function()
         end
 
         if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            flyTargetPos = nil -- ไม่ใช้ stealthFlyTo ใน OP Mode
+            flyTargetPos = nil
             Humanoid.PlatformStand = true
             local ap = getRaidAnchorPos()
             
@@ -470,7 +473,7 @@ spawn(function()
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
 
             if isAnchorPhaseActive() and ap then
-                flyTargetPos = ap + Vector3.new(0, FLY_OFFSET, 0) -- ใช้ Force บินไปหา Anchor
+                flyTargetPos = ap + Vector3.new(0, FLY_OFFSET, 0)
                 local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #nt > 0 and ck then executeStealthSlash(nt, true) end
             else
@@ -518,34 +521,43 @@ spawn(function()
     end
 end)
 
--- [ระบบ Heartbeat ควบคุม VectorForce แทน Velocity]
+-- [ระบบ Heartbeat ควบคุม VectorForce เลียนแบบโมดูล Momentum & Freefall ของเกมจริง]
 spawn(function()
-    physicsConn = RunService.Heartbeat:Connect(function()
+    physicsConn = RunService.Heartbeat:Connect(function(dt)
         if not hoverForce or not RootPart then return end
         if not Options.Autofarm.Value and not Options.OPFarm.Value then return end
         
-        local mass = RootPart.AssemblyMass
-        
+        -- ใช้สูตรเดียวกับเกม: p7.Velocity = p7.Velocity:Lerp(v21, 0.4 * p12 * p6)
+        local lerpAlpha = 0.4 * dt * 60 
+
         if flyTargetPos then
             local diff = flyTargetPos - RootPart.Position
             local dist = diff.Magnitude
+            
             if dist < 5 then
                 isFlying = false
                 flyTargetPos = nil
-                hoverForce.Force = Vector3.new(0, mass * workspace.Gravity, 0) -- ค้างลอยเฉยๆ เมื่อถึงจุดหมาย
+                -- [เลียนแบบ Freefall] เมื่อถึงจุดหมาย Lerp Velocity กลับเป็น 0 อย่างนุ่มนวล
+                hoverForce.Velocity = hoverForce.Velocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
             else
-                RootPart.CFrame = CFrame.lookAt(RootPart.Position, Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z))
-                -- ใช้สูตร F = m * a คำนวณแรงเร่งตัวอย่างเป็นธรรมชาติ
-                local forceStrength = math.clamp(dist * 8, 500, 8000)
-                hoverForce.Force = diff.Unit * mass * forceStrength
+                -- [เลียนแบบ Momentum] คำนวณความเร็วตามระยะทาง (ยิ่งใกล้ยิ่งช้า ยิ่งไกลยิ่งเร็ว)
+                local targetSpeed = math.clamp(dist * 10, 100, 200)
+                local targetVelocity = diff.Unit * targetSpeed
+                hoverForce.Velocity = hoverForce.Velocity:Lerp(targetVelocity, lerpAlpha)
             end
+            
+            -- หันหน้าไปทางเป้าหมายเพื่อให้ Raycast Hit ถูกต้อง
+            local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
+            RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
         else
             if savedHoverY then
+                -- [เลียนแบบ ODM Hover] ใช้ Velocity ดันตัวเองขึ้นลงเหมือนกด Gas
                 local diffY = savedHoverY - RootPart.Position.Y
-                hoverForce.Force = Vector3.new(0, diffY * mass * 50, 0)
+                local targetVel = Vector3.new(0, diffY * 50, 0)
+                hoverForce.Velocity = hoverForce.Velocity:Lerp(targetVel, lerpAlpha)
             else
-                -- ลอยเฉยๆ โดยหยุดแรงโน้มถ่วงทับลงไปทุกเฟรมอย่างแม่นยำ
-                hoverForce.Force = Vector3.new(0, mass * workspace.Gravity, 0)
+                -- [เลียนแบบ Freefall ปกติ] หยุดตัวนิ่งๆ โดยไม่ต้องล็อคแกน Y
+                hoverForce.Velocity = hoverForce.Velocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
             end
         end
     end)
@@ -613,5 +625,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Physics Safe Version!", Duration=5})
+Library:Notify({Title="Loaded", Content="Momentum Physics Applied!", Duration=5})
 SaveManager:LoadAutoloadConfig()
