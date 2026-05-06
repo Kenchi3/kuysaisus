@@ -138,9 +138,9 @@ local function setupHoverForce()
     hoverForce = Instance.new("LinearVelocity", RootPart)
     hoverForce.Attachment0 = hoverAttachment
     hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
-    -- [สำคัญมากสำหรับ LinearVelocity]
-    hoverForce.MaxAxes = Vector3.new(40000, 40000, 40000)
-    hoverForce.EraseUndeflectedForces = Enum.EraseUndefinedForces.Always
+    -- [สำคัญมาก] ต้องใช้ MaxForce สำหรับ LinearVelocity
+    hoverForce.MaxForce = Vector3.new(40000, 40000, 40000)
+    hoverForce.EraseUndeflectedForces = Enum.EraseUndeflectedForces.Always
 end
 
 local function cleanupHoverForce()
