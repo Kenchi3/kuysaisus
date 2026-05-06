@@ -42,7 +42,9 @@ local Remotes = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Remotes")
 local POST = Remotes:WaitForChild("POST")
 local GET = Remotes:WaitForChild("GET")
 local TitansFolder = Workspace:FindFirstChild("Titans")
-local ButtonsFolder = Player:FindFirstChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
+
+-- [แก้ไข] ใช้ WaitForChild สำหรับ PlayerGui เพื่อป้องกัน nil error
+local ButtonsFolder = Player:WaitForChild("PlayerGui"):WaitForChild("Interface"):FindFirstChild("Buttons")
 
 local PlaceId = game.PlaceId
 local isRaidMap = workspace:GetAttribute("Type") == "Raids"
@@ -128,7 +130,7 @@ local function isAnchorPhaseActive()
 end
 
 -- ==========================================
--- [ 3. ฟังก์ชันระบบทำงาน (Momentum Physics Version) ]
+-- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
 local FLY_OFFSET = 150
 
@@ -138,8 +140,10 @@ local function setupHoverForce()
     hoverForce = Instance.new("LinearVelocity", RootPart)
     hoverForce.Attachment0 = hoverAttachment
     hoverForce.RelativeTo = Enum.ActuatorRelativeTo.World
-    -- [สำคัญมาก] ต้องใช้ MaxForce สำหรับ LinearVelocity
-    hoverForce.MaxForce = Vector3.new(40000, 40000, 40000)
+    
+    -- [แก้ไข Bug สำคัญ] LinearVelocity ใช้ ForceLimit (Number) ไม่ใช่ MaxForce (Vector3)
+    hoverForce.ForceLimit = 40000 
+    
     hoverForce.EraseUndeflectedForces = Enum.EraseUndeflectedForces.Always
 end
 
@@ -266,11 +270,8 @@ local function getAllTargets()
     return targets
 end
 
--- [ระบบโจมตีปลอดภัย]
 local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
-    
-    -- [ป้องกัน Ban] ปลด PlatformStand เพื่อให้ Animation ของดาบเล่นที่เซิร์ฟเวอร์
     Humanoid.PlatformStand = false
     task.wait(0.05)
     
@@ -283,14 +284,11 @@ local function executeStealthSlash(napesArray, isOP)
     end
 
     pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-    
-    -- [ป้องกัน Ban] รอให้ดาบสับถึงเป้าหมายก่อน จึงค่อยยิง Hit Register
     task.wait(0.15)
     
     for i, napePart in ipairs(napesArray) do
         if napePart and napePart.Parent then
             task.spawn(function()
-                -- [ป้องกัน Ban] ยิงแบบสเลปออกไปทีละตัวตามลำดับ ไม่ยิงพร้อมกัน
                 task.wait(i * 0.03 + math.random(10, 30) / 1000)
                 pcall(function() GET:InvokeServer("Hitboxes", "Register", napePart, math.random(180, 260), math.random(10, 100)) end)
             end)
@@ -305,13 +303,9 @@ end
 local function executeBossBurst(bossPart, burstAmount)
     if not bossPart then return false end
     for i = 1, burstAmount do
-        -- [ป้องกัน Ban] สลับสถานะทีละรอบ ไม่ใช้ task.spawn พร้อมกัน
         Humanoid.PlatformStand = false
-        task.wait(0.05)
         pcall(function() POST:FireServer("Attacks", "Slash", true) end)
-        task.wait(0.1)
         pcall(function() GET:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
-        task.wait(0.15)
         if Options.OPFarm.Value then Humanoid.PlatformStand = true end
     end
     return true
@@ -386,7 +380,7 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Loop หลัก (Momentum Physics Version) ]
+-- [ 5. Loop หลัก ]
 -- ==========================================
 Humanoid.Died:Connect(function()
     cleanupHoverForce()
@@ -521,14 +515,11 @@ spawn(function()
     end
 end)
 
--- [ระบบ Heartbeat ควบคุม VectorForce เลียนแบบโมดูล Momentum & Freefall ของเกมจริง]
--- [ระบบ Heartbeat ควบคุม VectorForce เลียนแบบโมดูล Momentum & Freefall ของเกมจริง]
 spawn(function()
     physicsConn = RunService.Heartbeat:Connect(function(dt)
         if not hoverForce or not RootPart then return end
         if not Options.Autofarm.Value and not Options.OPFarm.Value then return end
         
-        -- ใช้สูตรเดียวกับเกม: p7.Velocity = p7.Velocity:Lerp(v21, 0.4 * p12 * p6)
         local lerpAlpha = 0.4 * dt * 60 
 
         if flyTargetPos then
@@ -538,25 +529,20 @@ spawn(function()
             if dist < 5 then
                 isFlying = false
                 flyTargetPos = nil
-                -- [เลียนแบบ Freefall] เมื่อถึงจุดหมาย Lerp Velocity กลับเป็น 0 อย่างนุ่มนวล
                 hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(Vector3.new(0, 0, 0), lerpAlpha)
             else
-                -- [เลียนแบบ Momentum] คำนวณความเร็วตามระยะทาง (ยิ่งใกล้ยิ่งช้า ยิ่งไกลยิ่งเร็ว)
                 local targetSpeed = math.clamp(dist * 10, 100, 200)
                 local targetVelocity = diff.Unit * targetSpeed
                 hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVelocity, lerpAlpha)
             end
             
-            -- หันหน้าไปทางเป้าหมายเพื่อให้ Raycast Hit ถูกต้อง
             local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
             RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
         else
             if savedHoverY then
-                -- [เลียนแบบ ODM Hover] ใช้ Velocity ดันตัวเองขึ้นลงเหมือนกด Gas
                 local diffY = savedHoverY - RootPart.Position.Y
                 local targetVel = Vector3.new(0, diffY * 50, 0)
                 hoverForce.VectorVelocity = hoverForce.VectorVelocity:Lerp(targetVel, lerpAlpha)
-            else
             end
         end
     end)
@@ -624,5 +610,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Momentum Physics Applied!", Duration=5})
+Library:Notify({Title="Loaded", Content="Fixed Physics & UI Errors", Duration=5})
 SaveManager:LoadAutoloadConfig()
