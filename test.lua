@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "By nxnn_nn",
+    SubTitle = "Hook Physics v4 (Safe Above Head)",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -377,32 +377,18 @@ Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 -- [ 5. Hook Physics Engine v5 (Force-Based Fly) ]
 -- ==========================================
 
--- ==========================================
--- [ ระบบ Smart Noclip (Collision Group) ]
--- ==========================================
-local PhysicsService = game:GetService("PhysicsService")
-
--- สร้างกลุ่ม Collision สำหรับ Noclip
-local NOCLIP_GROUP = "NoclipFlyGroup"
-pcall(function()
-    PhysicsService:RegisterCollisionGroup(NOCLIP_GROUP)
-    PhysicsService:CollisionGroupSetCollidable(NOCLIP_GROUP, "Default", false)
-end)
-
-local function setCharacterNoclip(enabled)
-    if not Character then return end
-    for _, part in pairs(Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if enabled then
-                -- ย้ายไปกลุ่ม Noclip (ทะลุได้)
-                part.CollisionGroup = NOCLIP_GROUP
-            else
-                -- คืนไปกลุ่มปกติ (ชนปกติ)
-                part.CollisionGroup = "Default"
+-- [ระบบ Noclip]
+RunService.Stepped:Connect(function()
+    if Options.Noclip.Value then
+        if Character then
+            for _, part in pairs(Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
         end
     end
-end
+end)
 
 -- [ตัวแปรระบบบิน]
 local flyForce = nil
@@ -463,19 +449,6 @@ spawn(function()
             -- ดึงค่าจาก Slider
             local maxSpeed = Options.FlySpeed.Value
             local farmHeight = Options.FarmHeight.Value
-            
-            -- [เพิ่มเติม] Smart Noclip Logic: เปิดตอนบิน/ลอย, ปิดตอนยืนนิ่งบนพื้น
-            if Options.Noclip.Value then
-                if isFlying or lockHeight_Y or savedHoverY then
-                    setCharacterNoclip(true) -- ทะลุขณะลอย/บิน
-                else
-                    setCharacterNoclip(false) -- ชนปกติขณะจะลงมายืนบนพื้น
-                end
-            else
-                setCharacterNoclip(false) -- ปิด Noclip ชนปกติ
-            end
-            
-            -- [สถานะ 1: บินไปเป้าหมาย... (โค้ดเดิมของคุณด้านล่างต่อเลย)]
             
             -- [สถานะ 1: บินไปเป้าหมายแบบใช้แรงดัน (Force-Based Approach)]
             if isFlying and flyTargetPos then
@@ -540,7 +513,6 @@ spawn(function()
                 savedHoverY = nil
                 lockHeight_Y = nil
                 Humanoid.PlatformStand = false
-                setCharacterNoclip(false) -- [เพิ่มเติม] ปิด Noclip
             end
         end
     end)
@@ -613,7 +585,7 @@ spawn(function()
             ck = (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)) >= mt
         end
 
-            if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
+                if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             savedHoverY = nil -- รีเซ็ต
             
             local farmHeight = Options.FarmHeight.Value
@@ -766,5 +738,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
+Library:Notify({Title="Loaded", Content="Safe Farm: Above Head Mode Enabled", Duration=5})
 SaveManager:LoadAutoloadConfig()
