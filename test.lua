@@ -413,7 +413,7 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. Hook Physics Engine v4 ]
+-- [ 5. Hook Physics Engine v5 (Force-Based Fly) ]
 -- ==========================================
 
 -- [ระบบ Noclip]
@@ -429,13 +429,40 @@ RunService.Stepped:Connect(function()
     end
 end)
 
+-- [ตัวแปรระบบบิน]
+local flyForce = nil
+local flyAttachment = nil
+
+-- Function สร้างระบบแรงดัน (ย้ายไปไว้ตรงนี้เพื่อความเสถียร)
+local function setupFlyPhysics()
+    if not RootPart then return end
+    -- ลบของเก่าทิ้งก่อน (ป้องกันรั่ว)
+    if flyForce then flyForce:Destroy() end
+    if flyAttachment then flyAttachment:Destroy() end
+
+    flyAttachment = Instance.new("Attachment")
+    flyAttachment.Name = "FlyAttachment"
+    flyAttachment.Parent = RootPart
+
+    flyForce = Instance.new("VectorForce")
+    flyForce.Name = "FlyVectorForce"
+    flyForce.Attachment0 = flyAttachment
+    flyForce.RelativeTo = Enum.ActuatorRelativeTo.World -- ใช้พิกัดโลก
+    flyForce.Enabled = false
+    flyForce.Parent = RootPart
+end
+
+setupFlyPhysics()
+
 -- Function สั่งบิน
 local function hookFlyTo(targetPos)
     if not RootPart then return end
     isFlying = true
     flyTargetPos = targetPos
     lockHeight_Y = nil 
-    Humanoid.PlatformStand = true
+    if flyForce then flyForce.Enabled = true end
+    -- เปลี่ยนจาก PlatformStand เป็นการจำลองสถานะตกหลุ่น (ปลอดภัยกว่าแบบเดิม)
+    Humanoid:ChangeState(Enum.HumanoidStateType.Freefall) 
 end
 
 -- Function หยุดบิน
@@ -443,42 +470,46 @@ local function stopFlying()
     isFlying = false
     flyTargetPos = nil
     lockHeight_Y = nil
+    if flyForce then flyForce.Enabled = false end
 end
 
--- Loop หลักฟิสิกส์
+-- Loop หลักฟิสิกส์ (ใช้ระบบ P-Controller คำนวณแรง)
 spawn(function()
     physicsConn = RunService.Heartbeat:Connect(function(dt)
-        if not RootPart or not Humanoid then return end
+        if not RootPart or not Humanoid or not flyForce then return end
         
         if Options.Autofarm.Value or Options.OPFarm.Value then
             
-            -- [สถานะ 1: บินไปเป้าหมาย (Smart Approach)]
+            local mass = RootPart.AssemblyMass
+            local gravity = workspace.Gravity
+            
+            -- [สถานะ 1: บินไปเป้าหมายแบบใช้แรงดัน (Force-Based Approach)]
             if isFlying and flyTargetPos then
-                local direction = (flyTargetPos - RootPart.Position)
-                local dist = direction.Magnitude
+                flyForce.Enabled = true
                 
-                -- [Logic: Safe Farm Above Head]
-                -- ถ้าเป็น Normal Farm ให้เป้าหมายสูงกว่าปกติ 15 หน่วย
                 local finalTarget = flyTargetPos
                 if Options.Autofarm.Value then
                     finalTarget = flyTargetPos + Vector3.new(0, SAFE_FARM_HOVER_HEIGHT, 0)
                 end
                 
-                local distToFinal = (finalTarget - RootPart.Position).Magnitude
+                local direction = (finalTarget - RootPart.Position)
+                local distToFinal = direction.Magnitude
                 
-                -- คำนวณความเร็วแบบ Smooth Deceleration
-                -- ยิ่งใกล้ยิ่งช้า (Linear Interpolation of Speed)
-                -- Max Speed 200, Min Speed 10, Braking Distance 100
-                local speedFactor = math.clamp((distToFinal / 100) * 200, 10, 200)
+                -- คำนวณความเร็วเป้าหมาย (Smooth Deceleration)
+                local speedFactor = math.clamp((distToFinal / 80) * 150, 15, 150)
+                local targetVelocity = direction.Unit * speedFactor
                 
-                -- คำนวณทิศทาง
-                local targetDir = (finalTarget - RootPart.Position).Unit
-                local targetVelocity = targetDir * speedFactor
+                -- คำนวณแรงที่ต้องใส่ (F = m*a) 
+                -- 1. แรงถ่วงดึงลง (ต้องชดเชย)
+                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
+                -- 2. แรงขับเคลื่อนไปข้างหน้า (P-Controller: ยิ่งห่างจากความเร็วเป้าหมาย ยิ่งอัดแรง)
+                local currentVelocity = RootPart.AssemblyLinearVelocity
+                local driveForce = (targetVelocity - currentVelocity) * mass * 10 
                 
-                -- ปรับ Velocity แบบนุ่มนวล (Lerp)
-                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVelocity, 0.1)
+                -- รวมแรง
+                flyForce.Force = counterGravityForce + driveForce
                 
-                -- หันหน้าไปทางเป้าหมาย (Look at X,Z of target)
+                -- หันหน้าไปทางเป้าหมาย
                 local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
                 if (RootPart.Position - lookTarget).Magnitude > 1 then
                     RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
@@ -488,46 +519,42 @@ spawn(function()
                 if distToFinal < 5 then
                     isFlying = false
                     flyTargetPos = nil
-                    
-                    -- [Logic ล๊อคความสูง]
                     if Options.Autofarm.Value then
-                         lockHeight_Y = RootPart.Position.Y 
+                        lockHeight_Y = RootPart.Position.Y 
                     end
-                    
-                    -- หยุดนิ่งเบาๆ
-                    RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity * 0.5
                     return
                 end
             
-            -- [สถานะ 2: Hover แบบ OP Farm]
-            elseif savedHoverY then
-                local diffY = savedHoverY - RootPart.Position.Y
-                local targetVel = Vector3.new(0, diffY * 50, 0)
-                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.1)
-            
-            -- [สถานะ 3: ล๊อคความสูง Normal Farm (Floating Above Head)]
-            elseif lockHeight_Y and Options.Autofarm.Value then
-                Humanoid.PlatformStand = true
-                local diffY = lockHeight_Y - RootPart.Position.Y
-                -- ใช้ Velocity เพื่อรักษาตำแหน่งแกน Y และหยุด X,Z
-                local targetVel = Vector3.new(0, diffY * 50, 0)
-                RootPart.AssemblyLinearVelocity = RootPart.AssemblyLinearVelocity:Lerp(targetVel, 0.15)
+            -- [สถานะ 2: Hover แบบ OP Farm หรือ ล๊อคความสูง Normal Farm]
+            elseif lockHeight_Y or savedHoverY then
+                flyForce.Enabled = true
+                Humanoid.PlatformStand = Options.OPFarm.Value -- ให้ OPFarm นอนได้ แต่ Normal Farm ยืนตรง
                 
-            -- [สถานะ 4: ยืนนิ่งๆ]
+                local targetY = savedHoverY or lockHeight_Y
+                local diffY = targetY - RootPart.Position.Y
+                local currentVelocityY = RootPart.AssemblyLinearVelocity.Y
+                
+                -- ชดเชยแรงโน้มถ่วง + อัดแรงแกน Y เพื่อลอยนิ่งๆ (P-Controller แกน Y)
+                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
+                local hoverForceY = (diffY - currentVelocityY) * mass * 15
+                
+                -- ห้ามเลื่อนแกน X, Z (เบรคแนวราบ)
+                local brakeForceX = -RootPart.AssemblyLinearVelocity.X * mass * 10
+                local brakeForceZ = -RootPart.AssemblyLinearVelocity.Z * mass * 10
+                
+                flyForce.Force = counterGravityForce + Vector3.new(brakeForceX, hoverForceY, brakeForceZ)
+                
+            -- [สถานะ 3: ยืนนิ่งๆ]
             elseif not isFlying then
-                 if Options.OPFarm.Value then
-                    Humanoid.PlatformStand = true
-                 else
-                    if not Options.Autofarm.Value then
-                        Humanoid.PlatformStand = false
-                    end
-                 end
+                flyForce.Enabled = false
+                if not Options.OPFarm.Value and not Options.Autofarm.Value then
+                    Humanoid.PlatformStand = false
+                end
             end
         else
             -- Reset เมื่อปิด Farm
             if isFlying or savedHoverY or lockHeight_Y then
-                isFlying = false
-                flyTargetPos = nil
+                stopFlying()
                 savedHoverY = nil
                 lockHeight_Y = nil
                 Humanoid.PlatformStand = false
@@ -536,7 +563,7 @@ spawn(function()
     end)
 end)
 
--- Reset เมื่อตาย
+-- Reset เมื่อตาย (ต้องสร้าง Attachment และ Force ใหม่)
 Humanoid.Died:Connect(function()
     stopFlying()
     savedHoverY = nil
@@ -545,6 +572,7 @@ Humanoid.Died:Connect(function()
     Character = Player.CharacterAdded:Wait()
     RootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
+    setupFlyPhysics() -- <-- สร้างระบบฟิสิกส์ใหม่ให้ตัวละครใหม่
 end)
 
 spawn(function()
