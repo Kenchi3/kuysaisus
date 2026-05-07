@@ -513,12 +513,6 @@ spawn(function()
                 
                 flyForce.Force = counterGravityForce + driveForce
                 
-                -- หันหน้าไปทางเป้าหมาย
-                local lookTarget = Vector3.new(flyTargetPos.X, RootPart.Position.Y, flyTargetPos.Z)
-                if (RootPart.Position - lookTarget).Magnitude > 1 then
-                    RootPart.CFrame = CFrame.lookAt(RootPart.Position, lookTarget)
-                end
-                
                 -- ถึงเป้าหมาย (รัศมี 5 หน่วย)
                 if distToFinal < 5 then
                     isFlying = false
