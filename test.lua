@@ -746,4 +746,4 @@ for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 Window:SelectTab(1)
 Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
 SaveManager:LoadAutoloadConfig()
-Deletemap() -- ลบแผนที่ที่ขวางทาง (ถ้ามี) เพื่อความเสถียรของระบบบิน
+Deletemap()
