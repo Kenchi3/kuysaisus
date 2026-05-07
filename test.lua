@@ -377,18 +377,32 @@ Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 -- [ 5. Hook Physics Engine v5 (Force-Based Fly) ]
 -- ==========================================
 
--- [ระบบ Noclip]
-RunService.Stepped:Connect(function()
-    if Options.Noclip.Value then
-        if Character then
-            for _, part in pairs(Character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+-- ==========================================
+-- [ ระบบ Smart Noclip (Collision Group) ]
+-- ==========================================
+local PhysicsService = game:GetService("PhysicsService")
+
+-- สร้างกลุ่ม Collision สำหรับ Noclip
+local NOCLIP_GROUP = "NoclipFlyGroup"
+pcall(function()
+    PhysicsService:RegisterCollisionGroup(NOCLIP_GROUP)
+    PhysicsService:CollisionGroupSetCollidable(NOCLIP_GROUP, "Default", false)
+end)
+
+local function setCharacterNoclip(enabled)
+    if not Character then return end
+    for _, part in pairs(Character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if enabled then
+                -- ย้ายไปกลุ่ม Noclip (ทะลุได้)
+                part.CollisionGroup = NOCLIP_GROUP
+            else
+                -- คืนไปกลุ่มปกติ (ชนปกติ)
+                part.CollisionGroup = "Default"
             end
         end
     end
-end)
+end
 
 -- [ตัวแปรระบบบิน]
 local flyForce = nil
@@ -449,6 +463,19 @@ spawn(function()
             -- ดึงค่าจาก Slider
             local maxSpeed = Options.FlySpeed.Value
             local farmHeight = Options.FarmHeight.Value
+            
+            -- [เพิ่มเติม] Smart Noclip Logic: เปิดตอนบิน/ลอย, ปิดตอนยืนนิ่งบนพื้น
+            if Options.Noclip.Value then
+                if isFlying or lockHeight_Y or savedHoverY then
+                    setCharacterNoclip(true) -- ทะลุขณะลอย/บิน
+                else
+                    setCharacterNoclip(false) -- ชนปกติขณะจะลงมายืนบนพื้น
+                end
+            else
+                setCharacterNoclip(false) -- ปิด Noclip ชนปกติ
+            end
+            
+            -- [สถานะ 1: บินไปเป้าหมาย... (โค้ดเดิมของคุณด้านล่างต่อเลย)]
             
             -- [สถานะ 1: บินไปเป้าหมายแบบใช้แรงดัน (Force-Based Approach)]
             if isFlying and flyTargetPos then
@@ -513,6 +540,7 @@ spawn(function()
                 savedHoverY = nil
                 lockHeight_Y = nil
                 Humanoid.PlatformStand = false
+                setCharacterNoclip(false) -- [เพิ่มเติม] ปิด Noclip
             end
         end
     end)
@@ -585,31 +613,26 @@ spawn(function()
             ck = (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)) >= mt
         end
 
-        if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            lockHeight_Y = nil 
-            stopFlying() 
-            Humanoid.PlatformStand = true
-            local ap = getRaidAnchorPos()
-            local farmHeight = Options.FarmHeight.Value
+            if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
+            savedHoverY = nil -- รีเซ็ต
             
+            local farmHeight = Options.FarmHeight.Value
+            local ap = getRaidAnchorPos()
+            
+            -- [ปรับปรุง] ให้ OP Farm ใช้ระบบ VectorForce ผ่านตัวแปร savedHoverY เหมือน Normal Farm
             if not opFarmInitialized then
-                -- [ปรับ] ใช้ Options.FarmHeight.Value แทน FLY_OFFSET
-                savedHoverY = (ap and (ap.Y + farmHeight)) or farmHeight + math.random(-5, 5)
+                savedHoverY = (ap and (ap.Y + farmHeight)) or (RootPart.Position.Y + farmHeight)
                 opFarmInitialized = true
             end
+            
+            Humanoid.PlatformStand = true
             
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
 
             if isAnchorPhaseActive() and ap then
-                local targetFlat = Vector3.new(ap.X, savedHoverY, ap.Z)
-                if (RootPart.Position - targetFlat).Magnitude > 20 then
-                     local dir = (targetFlat - RootPart.Position).Unit
-                     -- [ปรับ] ใช้ Options.FlySpeed.Value คูณ 0.5 สำหรับการเคลื่อนที่แนวราบตอนอยู่บนฟ้า
-                     local hSpeed = math.clamp(Options.FlySpeed.Value * 0.5, 50, 200)
-                     RootPart.AssemblyLinearVelocity = Vector3.new(dir.X * hSpeed, 0, dir.Z * hSpeed)
-                else
-                     RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) 
-                end
+                -- ระบบ VectorForce จะจับไปที่ตำแหน่ง Anchor เองโดยอัตโนมัติ ไม่ต้องยัด Velocity
+                lockHeight_Y = nil
+                savedHoverY = ap.Y + farmHeight
                 
                 local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #nt > 0 and ck then executeStealthSlash(nt, true) end
@@ -617,7 +640,11 @@ spawn(function()
                 if bt then executeBossBurst(bt, Options.BurstAmount.Value)
                 else
                     local at = getAllTargets(); local lt = {}; for i = 1, math.min(#at, OP_MAX_TARGETS) do table.insert(lt, at[i]) end
-                    if #lt > 0 and ck then executeStealthSlash(lt, true) end
+                    if #lt > 0 and ck then 
+                        -- ถ้าไม่มี Anchor ให้ลอยตรงนั้นแล้วฟัน
+                        lockHeight_Y = RootPart.Position.Y
+                        executeStealthSlash(lt, true) 
+                    end
                 end
             end
             task.wait(1); continue 
