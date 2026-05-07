@@ -154,6 +154,13 @@ end
 -- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
 
+local function Deletemap()
+    local climbable = workspace:FindFirstChild("Climbable")
+    if climbable then climbable:Destroy() end
+end
+
+Deletemap() -- ลบแผนที่ที่ขวางทาง (ถ้ามี) เพื่อความเสถียรของระบบบิน
+
 local function findNearestStation()
     for _, obj in pairs(workspace:GetDescendants()) do
         if (obj.Name:find("Refill") or obj.Name:find("Station")) and (obj:IsA("Model") or obj:IsA("BasePart")) then return obj end
