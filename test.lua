@@ -7,7 +7,7 @@ local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercon
 
 local Window = Library:CreateWindow{
     Title = "Klakuylek Hub",
-    SubTitle = "Hook Physics v4 (Safe Above Head)",
+    SubTitle = "By nxnn_nn",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
     Acrylic = true, 
@@ -766,5 +766,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="Safe Farm: Above Head Mode Enabled", Duration=5})
+Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
 SaveManager:LoadAutoloadConfig()
