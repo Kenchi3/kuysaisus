@@ -675,30 +675,43 @@ spawn(function()
                 if ap then
                     if (RootPart.Position - ap).Magnitude > 40 then 
                         hookFlyTo(ap) 
-                        while isFlying do task.wait(0.05) end 
                     end
                     local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                     if #nt > 0 then
                         if ck then executeStealthSlash(nt, false) end
-                        task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
+                        task.wait(math.max(0.1, Options.SlashDelay.Value))
                     else task.wait(0.5) end
                     continue 
                 end
             end
             
             if bt then
-                hookFlyTo(bt.Position)
-                while isFlying do task.wait(0.05) end
-                if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
-                task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
+                -- [ปรับปรุง] ไม่ต้องรอให้บินไปถึงแล้วหยุดนิ่ง ขอแค่เข้าใกล้พอก็ฟันได้เลย
+                local distToBoss = (RootPart.Position - bt.Position).Magnitude
+                if distToBoss > 25 then 
+                    hookFlyTo(bt.Position)
+                else
+                    -- เข้าใกล้แล้ว ให้ระบบ Hover จับตำแหน่งเอง แล้วเราฟันทิ้งไปพร้อมกัน
+                    lockHeight_Y = RootPart.Position.Y
+                    if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
+                    task.wait(math.max(0.1, Options.SlashDelay.Value))
+                end
             else
                 local t, ap = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #t > 0 and ap then
-                    hookFlyTo(ap)
-                    while isFlying do task.wait(0.05) end
-                    if ck then executeStealthSlash(t, false) end
-                    task.wait(math.max(0.1, Options.SlashDelay.Value + math.random(-0.1, 0.2)))
-                else task.wait(0.5) end
+                    -- [ปรับปรุง] คำนวณระยะห่างจากก้อนศัตรู
+                    local distToCluster = (RootPart.Position - ap).Magnitude
+                    if distToCluster > 25 then
+                        hookFlyTo(ap)
+                    else
+                        -- อยู่ในระยะพอสมควรแล้ว ล็อคความสูงแล้วฟันไปพร้อมๆ กับที่ตัวละครกำลังเบรคลอยนิ่ง
+                        lockHeight_Y = RootPart.Position.Y
+                        if ck then executeStealthSlash(t, false) end
+                        task.wait(math.max(0.1, Options.SlashDelay.Value))
+                    end
+                else 
+                    task.wait(0.5) 
+                end
             end
         end
     end
