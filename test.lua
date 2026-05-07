@@ -64,7 +64,7 @@ local flyTargetPos = nil
 local isFlying = false
 local physicsConn = nil
 local lockHeight_Y = nil
-local SAFE_FARM_HOVER_HEIGHT = 15 -- ความสูงเหนือหัวไททัน
+local SAFE_FARM_HOVER_HEIGHT = 100 -- ความสูงเหนือหัวไททัน
 
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
