@@ -55,7 +55,6 @@ local runCounter = 0
 local lastJoinAttempt = 0
 
 local opFarmInitialized = false
-local OP_FLY_HEIGHT = 300
 local OP_MAX_TARGETS = 3
 
 -- [ระบบฟิสิกส์]
@@ -64,7 +63,7 @@ local flyTargetPos = nil
 local isFlying = false
 local physicsConn = nil
 local lockHeight_Y = nil
-local SAFE_FARM_HOVER_HEIGHT = 100 -- ความสูงเหนือหัวไททัน
+
 
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
@@ -192,7 +191,6 @@ end
 -- ==========================================
 -- [ 3. ฟังก์ชันระบบทำงาน ]
 -- ==========================================
-local FLY_OFFSET = 150
 
 local function findNearestStation()
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -392,7 +390,8 @@ Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
 Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
-Tabs.Main:CreateToggle("EnableAntiCheatActions", { Title = "Anti-Cheat Simulation", Default = false }) 
+Tabs.Main:CreateSlider("FarmHeight", { Title = "Farm Height", Min = 5, Max = 500, Default = 50, Rounding = 0 })
+Tabs.Main:CreateSlider("FlySpeed", { Title = "Fly Speed", Min = 50, Max = 1000, Default = 300, Rounding = 0 })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
 Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
@@ -473,7 +472,8 @@ local function stopFlying()
     if flyForce then flyForce.Enabled = false end
 end
 
--- Loop หลักฟิสิกส์ (ใช้ระบบ P-Controller คำนวณแรง)
+
+-- Loop หลักฟิสิกส์ (ใช้ระบบ PD Controller + รองรับ Slider)
 spawn(function()
     physicsConn = RunService.Heartbeat:Connect(function(dt)
         if not RootPart or not Humanoid or not flyForce then return end
@@ -482,6 +482,11 @@ spawn(function()
             
             local mass = RootPart.AssemblyMass
             local gravity = workspace.Gravity
+            local currentVelocity = RootPart.AssemblyLinearVelocity
+            
+            -- ดึงค่าจาก Slider
+            local maxSpeed = Options.FlySpeed.Value
+            local farmHeight = Options.FarmHeight.Value
             
             -- [สถานะ 1: บินไปเป้าหมายแบบใช้แรงดัน (Force-Based Approach)]
             if isFlying and flyTargetPos then
@@ -489,24 +494,23 @@ spawn(function()
                 
                 local finalTarget = flyTargetPos
                 if Options.Autofarm.Value then
-                    finalTarget = flyTargetPos + Vector3.new(0, SAFE_FARM_HOVER_HEIGHT, 0)
+                    finalTarget = flyTargetPos + Vector3.new(0, farmHeight, 0)
                 end
                 
                 local direction = (finalTarget - RootPart.Position)
                 local distToFinal = direction.Magnitude
                 
-                -- คำนวณความเร็วเป้าหมาย (Smooth Deceleration)
-                local speedFactor = math.clamp((distToFinal / 80) * 150, 15, 150)
+                -- ระยะเริ่มเบรคปรับตามความเร็ว (บินเร็ว เบรคไกลกว่า)
+                local brakingDistance = maxSpeed * 1.0 
+                local speedFactor = math.clamp((distToFinal / brakingDistance) * maxSpeed, 5, maxSpeed)
                 local targetVelocity = direction.Unit * speedFactor
                 
-                -- คำนวณแรงที่ต้องใส่ (F = m*a) 
-                -- 1. แรงถ่วงดึงลง (ต้องชดเชย)
-                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
-                -- 2. แรงขับเคลื่อนไปข้างหน้า (P-Controller: ยิ่งห่างจากความเร็วเป้าหมาย ยิ่งอัดแรง)
-                local currentVelocity = RootPart.AssemblyLinearVelocity
-                local driveForce = (targetVelocity - currentVelocity) * mass * 10 
+                -- อัตราการตอบสนอง (P-Gain) ปรับเพิ่มขึ้นตามความเร็วสูงสุดเพื่อให้ทันแรงเร่ง
+                local pGain = math.clamp(maxSpeed / 5, 30, 80)
                 
-                -- รวมแรง
+                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
+                local driveForce = (targetVelocity - currentVelocity) * mass * pGain 
+                
                 flyForce.Force = counterGravityForce + driveForce
                 
                 -- หันหน้าไปทางเป้าหมาย
@@ -525,24 +529,19 @@ spawn(function()
                     return
                 end
             
-            -- [สถานะ 2: Hover แบบ OP Farm หรือ ล๊อคความสูง Normal Farm]
+            -- [สถานะ 2: Hover แบบ OP Farm หรือ ล๊อคความสูง Normal Farm (ระบบ PD Controller)]
             elseif lockHeight_Y or savedHoverY then
                 flyForce.Enabled = true
-                Humanoid.PlatformStand = Options.OPFarm.Value -- ให้ OPFarm นอนได้ แต่ Normal Farm ยืนตรง
+                Humanoid.PlatformStand = Options.OPFarm.Value
                 
                 local targetY = savedHoverY or lockHeight_Y
-                local diffY = targetY - RootPart.Position.Y
-                local currentVelocityY = RootPart.AssemblyLinearVelocity.Y
                 
-                -- ชดเชยแรงโน้มถ่วง + อัดแรงแกน Y เพื่อลอยนิ่งๆ (P-Controller แกน Y)
-                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
-                local hoverForceY = (diffY - currentVelocityY) * mass * 15
+                local targetPosition = Vector3.new(RootPart.Position.X, targetY, RootPart.Position.Z)
+                local positionError = targetPosition - RootPart.Position
                 
-                -- ห้ามเลื่อนแกน X, Z (เบรคแนวราบ)
-                local brakeForceX = -RootPart.AssemblyLinearVelocity.X * mass * 10
-                local brakeForceZ = -RootPart.AssemblyLinearVelocity.Z * mass * 10
+                local correctionForce = (positionError * 40) - (currentVelocity * 25)
                 
-                flyForce.Force = counterGravityForce + Vector3.new(brakeForceX, hoverForceY, brakeForceZ)
+                flyForce.Force = (correctionForce * mass) + Vector3.new(0, mass * gravity, 0)
                 
             -- [สถานะ 3: ยืนนิ่งๆ]
             elseif not isFlying then
@@ -635,9 +634,11 @@ spawn(function()
             stopFlying() 
             Humanoid.PlatformStand = true
             local ap = getRaidAnchorPos()
+            local farmHeight = Options.FarmHeight.Value
             
             if not opFarmInitialized then
-                savedHoverY = (ap and (ap.Y + FLY_OFFSET)) or OP_FLY_HEIGHT + math.random(-5, 5)
+                -- [ปรับ] ใช้ Options.FarmHeight.Value แทน FLY_OFFSET
+                savedHoverY = (ap and (ap.Y + farmHeight)) or farmHeight + math.random(-5, 5)
                 opFarmInitialized = true
             end
             
@@ -647,7 +648,9 @@ spawn(function()
                 local targetFlat = Vector3.new(ap.X, savedHoverY, ap.Z)
                 if (RootPart.Position - targetFlat).Magnitude > 20 then
                      local dir = (targetFlat - RootPart.Position).Unit
-                     RootPart.AssemblyLinearVelocity = Vector3.new(dir.X * 100, 0, dir.Z * 100)
+                     -- [ปรับ] ใช้ Options.FlySpeed.Value คูณ 0.5 สำหรับการเคลื่อนที่แนวราบตอนอยู่บนฟ้า
+                     local hSpeed = math.clamp(Options.FlySpeed.Value * 0.5, 50, 200)
+                     RootPart.AssemblyLinearVelocity = Vector3.new(dir.X * hSpeed, 0, dir.Z * hSpeed)
                 else
                      RootPart.AssemblyLinearVelocity = Vector3.new(0,0,0) 
                 end
@@ -673,9 +676,12 @@ spawn(function()
             if isAnchorPhaseActive() then
                 local ap = getRaidAnchorPos()
                 if ap then
-                    if (RootPart.Position - ap).Magnitude > 40 then 
+                    -- [ปรับ] ใช้ระยะ 2 มิติ (แกน X,Z) ตรวจสอบว่าถึงเป้าหมายหรือยัง แทนระยะ 3 มิติ
+                    local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(ap.X, 0, ap.Z)).Magnitude
+                    if flatDist > 15 then 
                         hookFlyTo(ap) 
                     end
+                    
                     local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
                     if #nt > 0 then
                         if ck then executeStealthSlash(nt, false) end
@@ -686,12 +692,10 @@ spawn(function()
             end
             
             if bt then
-                -- [ปรับปรุง] ไม่ต้องรอให้บินไปถึงแล้วหยุดนิ่ง ขอแค่เข้าใกล้พอก็ฟันได้เลย
-                local distToBoss = (RootPart.Position - bt.Position).Magnitude
-                if distToBoss > 25 then 
+                local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(bt.Position.X, 0, bt.Position.Z)).Magnitude
+                if flatDist > 15 then 
                     hookFlyTo(bt.Position)
                 else
-                    -- เข้าใกล้แล้ว ให้ระบบ Hover จับตำแหน่งเอง แล้วเราฟันทิ้งไปพร้อมกัน
                     lockHeight_Y = RootPart.Position.Y
                     if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
                     task.wait(math.max(0.1, Options.SlashDelay.Value))
@@ -699,12 +703,10 @@ spawn(function()
             else
                 local t, ap = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
                 if #t > 0 and ap then
-                    -- [ปรับปรุง] คำนวณระยะห่างจากก้อนศัตรู
-                    local distToCluster = (RootPart.Position - ap).Magnitude
-                    if distToCluster > 25 then
+                    local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(ap.X, 0, ap.Z)).Magnitude
+                    if flatDist > 15 then
                         hookFlyTo(ap)
                     else
-                        -- อยู่ในระยะพอสมควรแล้ว ล็อคความสูงแล้วฟันไปพร้อมๆ กับที่ตัวละครกำลังเบรคลอยนิ่ง
                         lockHeight_Y = RootPart.Position.Y
                         if ck then executeStealthSlash(t, false) end
                         task.wait(math.max(0.1, Options.SlashDelay.Value))
