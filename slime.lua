@@ -41,6 +41,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
+local vitualUser = game:GetService("VirtualUser")
 
 local DataService = require(ReplicatedStorage.Packages._Index["leifstout_dataservice@0.4.0"].dataservice.DataServiceClient)
 local UpgradeTree = require(ReplicatedStorage.Source.Features.Upgrades.UpgradeTree)
@@ -206,7 +207,7 @@ local UpgradeListParagraph = Tabs.Upgrades:CreateParagraph("CurrentUpgradesList"
 -- ========================
 -- Anti AFK
 -- ========================
-player.Idled:Connect(function()
+Player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
