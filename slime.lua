@@ -6,7 +6,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "Klakuylek Hub",
+    Title = "Klakuylek Hub - Slime RNG",
     SubTitle = "by nxnn_nn",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
@@ -112,13 +112,13 @@ local zonesFolder = Workspace:WaitForChild("Zones")
 -- Main Tab UI
 Tabs.Main:CreateToggle("AutoRollToggle", {
     Title = "Auto Roll",
-    Description = "กด Roll อัตโนมัติ",
+    Description = "Automatically rolls for you",
     Default = false
 })
 
 Tabs.Main:CreateSlider("RollDelaySlider", {
     Title = "Roll Delay",
-    Description = "หน่วงเวลาระหว่างการ Roll (ป้องกันแบน)",
+    Description = "Delay between rolls to avoid detection",
     Default = 0.5,
     Min = 0.1,
     Max = 2,
@@ -127,47 +127,54 @@ Tabs.Main:CreateSlider("RollDelaySlider", {
 
 Tabs.Main:CreateToggle("AutoEquipBestToggle", {
     Title = "Auto Equip Best",
-    Description = "สวมใส่ไอเทมที่ดีที่สุดอัตโนมัติ (Delay 0.1s)",
+    Description = "Automatically equips the best items (0.1s delay)",
     Default = false
 })
 
+Tabs.Main:CreateToggle("AutoRebirthToggle", {
+    Title = "Auto Rebirth",
+    Description = "Automatically rebirths when available",
+    Default = false
+})
+
+
+Tabs.Main:CreateSection("Loots")
+
 Tabs.Main:CreateToggle("AutoCollectToggle", {
     Title = "Auto Collect Loots",
-    Description = "เก็บไอเทมอัตโนมัติผ่าน Remote",
+    Description = "Automatically collects dropped loot via Remote",
     Default = false
 })
 
 Tabs.Main:CreateSlider("LootDelaySlider", {
     Title = "Collect Delay",
-    Description = "หน่วงเวลาระหว่างเก็บของแต่ละชิ้น",
+    Description = "Delay between each loot collection",
     Default = 0.1,
     Min = 0,
     Max = 1,
     Rounding = 2,
 })
 
+Tabs.Main:CreateSection("Zones")
+
 Tabs.Main:CreateToggle("AutoPurchaseZoneToggle", {
     Title = "Auto Purchase Zone",
-    Description = "ซื้อโซนใหม่อัตโนมัติเมื่อมีเงินเพียงพอ",
+    Description = "Automatically purchases the next zone when affordable",
     Default = false
 })
 
 Tabs.Main:CreateToggle("AutoTPFurthestZoneToggle", {
     Title = "Auto TP Furthest Zone",
-    Description = "เทเลพอร์ตไปยังโซนที่ไกลที่สุดที่ปลดล็อกอัตโนมัติ",
-    Default = false
-})
-
-Tabs.Main:CreateToggle("AutoRebirthToggle", {
-    Title = "Auto Rebirth",
-    Description = "รีเบิร์ธอัตโนมัติเมื่อเปิดใช้งาน",
+    Description = "Automatically teleports to the highest unlocked zone",
     Default = false
 })
 
 -- Boost UI
+Tabs.Main:CreateSection("Boost")
+
 Tabs.Main:CreateDropdown("BoostSelector", {
     Title = "Select Boosts",
-    Description = "เลือก Boost ที่ต้องการให้ใช้อัตโนมัติ",
+    Description = "Select which boosts to activate automatically",
     Values = {"luck", "ultraLuck", "rollSpeed", "currency"},
     Multi = true,
     Default = {}
@@ -175,7 +182,7 @@ Tabs.Main:CreateDropdown("BoostSelector", {
 
 Tabs.Main:CreateToggle("AutoUseBoostToggle", {
     Title = "Auto Use Boost",
-    Description = "ใช้ Boost ที่เลือกอัตโนมัติเมื่อมีในตัว",
+    Description = "Automatically uses selected boosts from your inventory",
     Default = false
 })
 
@@ -187,7 +194,7 @@ local BoostAmountParagraph = Tabs.Main:CreateParagraph("BoostAmounts", {
 -- Upgrades Tab UI
 Tabs.Upgrades:CreateToggle("AutoUpgradeToggle", {
     Title = "Auto Smart Upgrade",
-    Description = "ซื้ออัปเกรดที่ปลดล็อกแล้วและมีเงินพออัตโนมัติ",
+    Description = "Automatically purchases unlocked upgrades you can afford",
     Default = false
 })
 
@@ -306,7 +313,6 @@ local function updateBoostUI()
     for id, name in pairs(boostNames) do
         local amount = 0
         if boostsData[id] then
-            -- รองรับทั้งกรณีที่ข้อมูลเป็นตาราง {amount = X} หรือเป็นตัวเลขตรงๆ
             if type(boostsData[id]) == "table" and boostsData[id].amount then
                 amount = boostsData[id].amount
             elseif type(boostsData[id]) == "number" then
@@ -321,7 +327,7 @@ local function updateBoostUI()
 end
 
 task.spawn(function()
-    while task.wait(5) do -- เช็คทุก 5 วินาที Boost มีผล 3 นาที ไม่จำเป็นต้องยิงรัว
+    while task.wait(5) do
         if Library.Unloaded then break end
         
         if Options.AutoUseBoostToggle.Value then
@@ -344,11 +350,11 @@ task.spawn(function()
                         pcall(function()
                             BoostRemote:InvokeServer("requestUseBoost", boostId)
                         end)
-                        task.wait(1) -- หน่วง 1 วินาทีระหว่างใช้ Boost แต่ละชนิด
+                        task.wait(1)
                     end
                 end
             end
-            updateBoostUI() -- อัปเดต UI หลังใช้ไป
+            updateBoostUI()
         end
     end
 end)
@@ -394,7 +400,7 @@ local function smartAutoUpgrade(currentupgrades, currentcoin, currentRollCurrenc
                     elseif costCurrency == "rollCurrency" then canAfford = currentRollCurrency >= costAmount end
 
                     if depMet and canAfford then
-                        Library:Notify{ Title = "Auto Upgrade", Content = string.format("กำลังซื้อ: %s", upgradeInfo.name), Duration = 3 }
+                        Library:Notify{ Title = "Auto Upgrade", Content = string.format("Buying: %s", upgradeInfo.name), Duration = 3 }
                         local success, result = pcall(function() return UpgradeRemote:InvokeServer("requestUnlock", upgradeId) end)
                         if success then
                             currentupgrades[upgradeId] = true
@@ -402,7 +408,7 @@ local function smartAutoUpgrade(currentupgrades, currentcoin, currentRollCurrenc
                             elseif costCurrency == "rollCurrency" then currentRollCurrency = currentRollCurrency - costAmount end
                             task.wait(0.5)
                         else
-                            warn("ซื้อล้มเหลว:", upgradeInfo.name, "สาเหตุ:", result)
+                            warn("Purchase failed:", upgradeInfo.name, "Reason:", result)
                         end
                     end
                 end
@@ -459,7 +465,6 @@ SaveManager:SetLibrary(Library)
 InterfaceManager:SetLibrary(Library)
 
 SaveManager:IgnoreThemeSettings()
--- เพิ่ม Paragraph ของ Boost และ Upgrade เข้าไปใน Ignore List
 SaveManager:SetIgnoreIndexes{"CurrentUpgradesList", "BoostAmounts"} 
 
 InterfaceManager:SetFolder("KlakuylekHub")
