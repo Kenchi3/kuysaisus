@@ -468,6 +468,11 @@ SaveManager:SetFolder("KlakuylekHub/specific-game")
 InterfaceManager:BuildInterfaceSection(Tabs.Settings)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
+local function getAutoSaveFile() return "autosave_" .. tostring(Player.Name) .. "_" .. tostring(game.GameId) end
+task.spawn(function() local n = getAutoSaveFile(); local f = SaveManager.Folder .. "/settings/" .. n .. ".json"; if isfile(f) then SaveManager:Load(n) end end)
+local function autoSave() SaveManager:Save(getAutoSaveFile()) end
+for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
+
 Window:SelectTab(1)
 
 Library:Notify{
