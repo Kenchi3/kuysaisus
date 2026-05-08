@@ -203,6 +203,14 @@ local UpgradeListParagraph = Tabs.Upgrades:CreateParagraph("CurrentUpgradesList"
     Content = "Loading..."
 })
 
+-- ========================
+-- Anti AFK
+-- ========================
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
 -- ==========================================
 -- [ 4. ระบบ Auto Roll & Equip ]
 -- ==========================================
