@@ -55,7 +55,7 @@ local runCounter = 0
 local lastJoinAttempt = 0
 
 local opFarmInitialized = false
-local OP_MAX_TARGETS = 5
+local OP_MAX_TARGETS = 3
 
 -- [ระบบฟิสิกส์]
 local savedHoverY = nil
