@@ -6,7 +6,7 @@ local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 
 local Window = Library:CreateWindow{
-    Title = "Klakuylek Hub (No Fly)",
+    Title = "Klakuylek Hub",
     SubTitle = "by nxnn_nn",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
@@ -53,39 +53,21 @@ local fallbackStartTime = 0
 local LAST_TITAN_THRESHOLD = 5 
 local runCounter = 0
 local lastJoinAttempt = 0
+
 local opFarmInitialized = false
 local OP_MAX_TARGETS = 3
 
+-- [ระบบฟิสิกส์]
+local savedHoverY = nil
+local flyTargetPos = nil
+local isFlying = false
+local physicsConn = nil
+local lockHeight_Y = nil
+
+
 local runCountFile = "NonnyHub/game/runcount_" .. Player.Name .. "_" .. tostring(game.GameId) .. ".json"
 
--- ==========================================
--- [ Identity Protection (ตำแหน่งเสี่ยงโดนแบน #1) ]
--- ==========================================
--- ⚠️ แนะนำให้ปิดการใช้งาน Hook เหล่านี้ถ้ารู้สึกว่าโดนแบนบ่อยๆ เพราะ Anti-cheat สมัยใหม่จะสแกน hookfunction
---[[
-local FakeCallerScript = nil
-pcall(function()
-    FakeCallerScript = game.Players.LocalPlayer.PlayerScripts:FindFirstChildWhichIsA("LocalScript", true)
-    if not FakeCallerScript then
-        FakeCallerScript = game.ReplicatedStorage:FindFirstChildWhichIsA("LocalScript", true)
-    end
-end)
-
-local OriginalGetCallingScript = getcallingscript
-if OriginalGetCallingScript then
-    hookfunction(getcallingscript, newcclosure(function()
-        if FakeCallerScript then return FakeCallerScript end
-        return OriginalGetCallingScript()
-    end))
-end
-
-local OldNamecall
-OldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    return OldNamecall(self, ...)
-end))
-]]
--- ==========================================
-
+-- [Function: Save/Load Run Count]
 local function saveRunCount()
     if not isfolder("NonnyHub") then makefolder("NonnyHub") end
     if not isfolder("NonnyHub/game") then makefolder("NonnyHub/game") end
@@ -107,6 +89,33 @@ local UPGRADE_STATS = {
     Spears = { "TS_Damage", "Crit_Damage", "Crit_Chance", "Blast_Radius", "TS_Speed", "TS_Control", "TS_Range", "TS_Gas" }
 }
 
+-- ==========================================
+-- [ Identity Protection / Caller Spoofing (Optimized) ]
+-- ==========================================
+local FakeCallerScript = nil
+pcall(function()
+    FakeCallerScript = game.Players.LocalPlayer.PlayerScripts:FindFirstChildWhichIsA("LocalScript", true)
+    if not FakeCallerScript then
+        FakeCallerScript = game.ReplicatedStorage:FindFirstChildWhichIsA("LocalScript", true)
+    end
+end)
+
+local OriginalGetCallingScript = getcallingscript
+if OriginalGetCallingScript then
+    hookfunction(getcallingscript, newcclosure(function()
+        if FakeCallerScript then return FakeCallerScript end
+        return OriginalGetCallingScript()
+    end))
+end
+
+-- ใช้ hookmetamethod เบาๆ เพื่อให้ newcclosure ทำงาน
+local OldNamecall
+OldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    return OldNamecall(self, ...)
+end))
+-- ==========================================
+-- [ ระบบตรวจสอบ Phase และ Anchor ]
+-- ==========================================
 local function getRaidAnchorPos()
     local unclimbable = workspace:FindFirstChild("Unclimbable")
     if not unclimbable then return nil end
@@ -140,6 +149,16 @@ local function isAnchorPhaseActive()
     end
     return false
 end
+
+-- ==========================================
+-- [ 3. ฟังก์ชันระบบทำงาน ]
+-- ==========================================
+
+local function Deletemap()
+    local climbable = workspace:FindFirstChild("Climbable")
+    if climbable then climbable:Destroy() end
+end
+
 
 local function findNearestStation()
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -204,6 +223,44 @@ local function getAliveTitanCount()
     return count
 end
 
+local function getTargetsNearAnchor(maxCount, radius)
+    local ap = getRaidAnchorPos(); if not ap or not TitansFolder then return {}, nil end
+    local targets = {}
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp and (tp.Position - ap).Magnitude <= radius then table.insert(targets, tp) end
+        end
+    end
+    table.sort(targets, function(a, b) return (a.Position - ap).Magnitude < (b.Position - ap).Magnitude end)
+    local lim = {}
+    for i = 1, math.min(#targets, maxCount) do table.insert(lim, targets[i]) end
+    return lim, ap
+end
+
+local function getTargetCluster(maxCount, radius)
+    local cp, md, anchorPos = nil, math.huge, RootPart.Position
+    if isRaidMap then local p = getRaidAnchorPos(); if p then anchorPos = p end end
+    if not TitansFolder then return {}, nil end
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp then local d = (anchorPos - tp.Position).Magnitude; if d < md then md = d; cp = tp end end
+        end
+    end
+    if not cp then return {}, nil end
+    local tgt, lim = {}, {}
+    for _, t in ipairs(TitansFolder:GetChildren()) do
+        if t:IsA("Model") and t:FindFirstChildOfClass("Humanoid") and t.Humanoid.Health > 0 and t:FindFirstChild("Hitboxes") then
+            local tp = RaidBossWeakPoints[t.Name] or (t.Hitboxes:FindFirstChild("Hit") and t.Hitboxes.Hit:FindFirstChild("Nape"))
+            if tp and (tp.Position - cp.Position).Magnitude <= radius then table.insert(tgt, tp) end
+        end
+    end
+    table.sort(tgt, function(a, b) return (a.Position - cp.Position).Magnitude < (b.Position - cp.Position).Magnitude end)
+    for i = 1, math.min(#tgt, maxCount) do table.insert(lim, tgt[i]) end
+    return lim, cp.Position
+end
+
 local function getAllTargets()
     local targets = {}; if not TitansFolder then return targets end
     for _, t in ipairs(TitansFolder:GetChildren()) do
@@ -215,10 +272,9 @@ local function getAllTargets()
     return targets
 end
 
--- ⚠️ จุดเสี่ยงโดนแบน #2: ตรงนี้คือจุดที่ส่งข้อมูลการฟันไปเซิร์ฟเวอร์ ถ้าคุณยืนไกลๆ เซิร์ฟเวอร์จะตรวจจับระยะการฟัน (Reach) ได้
 local function executeStealthSlash(napesArray, isOP)
     if not napesArray or #napesArray == 0 then return false end
-    Humanoid.PlatformStand = false -- ยืนตรงปกติเพื่อฟัน
+    Humanoid.PlatformStand = false
     
     if not isOP then
         local mainTarget = napesArray[1]
@@ -235,6 +291,10 @@ local function executeStealthSlash(napesArray, isOP)
             end)
         end
     end
+    
+    if isOP or Options.Autofarm.Value then -- ให้ Normal Farm ก็ PlatformStand หลังฟันเพื่อลอยตัวต่อ
+        Humanoid.PlatformStand = true
+    end
     return true
 end
 
@@ -244,6 +304,7 @@ local function executeBossBurst(bossPart, burstAmount)
         Humanoid.PlatformStand = false
         pcall(function() PostRemote:FireServer("Attacks", "Slash", true) end)
         pcall(function() GetRemote:InvokeServer("Hitboxes", "Register", bossPart, math.random(180, 260), math.random(10, 100)) end)
+        if Options.OPFarm.Value then Humanoid.PlatformStand = true end
     end
     return true
 end
@@ -291,13 +352,16 @@ Tabs.Main:CreateSection("Auto Upgrade")
 Tabs.Main:CreateToggle("AutoUpgrade", { Title = "Auto Upgrade Equipment", Default = false })
 Tabs.Main:CreateDropdown("UpgradeWeaponType", { Title = "Weapon Type", Values = {"Blades", "Spears", "Both"}, Default = 1 })
 
-Tabs.Main:CreateSection("Stand Still Nuke (No Fly)")
-Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Stand & Nuke)", Default = false })
+Tabs.Main:CreateSection("Auto Farm (Hook Physics)")
+Tabs.Main:CreateToggle("OPFarm", { Title = "OP Farm (Sky Nuke)", Default = false })
 Tabs.Main:CreateToggle("BossBurst", { Title = "Raid Boss Burst", Default = false })
 Tabs.Main:CreateSlider("BurstAmount", { Title = "Burst Hits Amount", Min = 1, Max = 9, Default = 5, Rounding = 0 })
 
-Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe - No Fly)", Default = false })
+Tabs.Main:CreateToggle("Autofarm", { Title = "Auto Farm (Safe)", Default = false })
+Tabs.Main:CreateSlider("FarmHeight", { Title = "Farm Height", Min = 5, Max = 500, Default = 50, Rounding = 0 })
+Tabs.Main:CreateSlider("FlySpeed", { Title = "Fly Speed", Min = 50, Max = 1000, Default = 300, Rounding = 0 })
 Tabs.Main:CreateSlider("TargetLimit", { Title = "AoE Target Limit", Min = 1, Max = 10, Default = 5, Rounding = 0 })
+Tabs.Main:CreateSlider("AoERadius", { Title = "AoE Radius", Min = 50, Max = 1000, Default = 250, Rounding = 0 })
 Tabs.Main:CreateSlider("SlashDelay", { Title = "Slash Delay", Min = 0.1, Max = 2.0, Default = 0.6, Rounding = 1 })
 
 Tabs.Main:CreateSection("Time Guard")
@@ -306,7 +370,7 @@ Tabs.Main:CreateInput("MinMissionTime", { Title = "Min. Mission Time (Seconds)",
 local TimerDisplay = Tabs.Main:CreateParagraph("TimerDisplay", { Title = "Timer Status", Content = "Status: Idle" })
 
 Tabs.Main:CreateSection("Misc")
-Tabs.Main:CreateToggle("Noclip", { Title = "Noclip (Phase Through Walls)", Default = false })
+Tabs.Main:CreateToggle("Noclip", { Title = "Noclip (Phase Through Walls)", Default = true })
 Tabs.Main:CreateToggle("OpenPremiumChest", { Title = "Open Premium Chest", Default = false })
 Tabs.Main:CreateToggle("AutoRetry", { Title = "Auto Retry", Default = true })
 local RunDisplay = Tabs.Main:CreateParagraph("RunDisplay", { Title = "Run Progress", Content = "Current: 0 / Max: 0" })
@@ -316,25 +380,160 @@ Tabs.Main:CreateToggle("AutoJoinBoosted", { Title = "Auto Join Boosted Mission",
 Tabs.Main:CreateToggle("MouseFix", { Title = "Mouse Fix", Default = true })
 
 -- ==========================================
--- [ 5. ระบบการทำงานหลัก (ตัดระบบบิน/ลอยตัวออกทั้งหมด) ]
+-- [ 5. Hook Physics Engine v5 (Force-Based Fly) ]
 -- ==========================================
 
--- ระบบ Noclip
+-- [ระบบ Noclip]
 RunService.Stepped:Connect(function()
     if Options.Noclip.Value then
         if Character then
             for _, part in pairs(Character:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
             end
         end
     end
 end)
 
+-- [ตัวแปรระบบบิน]
+local flyForce = nil
+local flyAttachment = nil
+
+-- Function สร้างระบบแรงดัน (ย้ายไปไว้ตรงนี้เพื่อความเสถียร)
+local function setupFlyPhysics()
+    if not RootPart then return end
+    -- ลบของเก่าทิ้งก่อน (ป้องกันรั่ว)
+    if flyForce then flyForce:Destroy() end
+    if flyAttachment then flyAttachment:Destroy() end
+
+    flyAttachment = Instance.new("Attachment")
+    flyAttachment.Name = "FlyAttachment"
+    flyAttachment.Parent = RootPart
+
+    flyForce = Instance.new("VectorForce")
+    flyForce.Name = "FlyVectorForce"
+    flyForce.Attachment0 = flyAttachment
+    flyForce.RelativeTo = Enum.ActuatorRelativeTo.World -- ใช้พิกัดโลก
+    flyForce.Enabled = false
+    flyForce.Parent = RootPart
+end
+
+setupFlyPhysics()
+
+-- Function สั่งบิน
+local function hookFlyTo(targetPos)
+    if not RootPart then return end
+    isFlying = true
+    flyTargetPos = targetPos
+    lockHeight_Y = nil 
+    if flyForce then flyForce.Enabled = true end
+    -- เปลี่ยนจาก PlatformStand เป็นการจำลองสถานะตกหลุ่น (ปลอดภัยกว่าแบบเดิม)
+    Humanoid:ChangeState(Enum.HumanoidStateType.Freefall) 
+end
+
+-- Function หยุดบิน
+local function stopFlying()
+    isFlying = false
+    flyTargetPos = nil
+    lockHeight_Y = nil
+    if flyForce then flyForce.Enabled = false end
+end
+
+
+-- Loop หลักฟิสิกส์ (ใช้ระบบ PD Controller + รองรับ Slider)
+spawn(function()
+    physicsConn = RunService.Heartbeat:Connect(function(dt)
+        if not RootPart or not Humanoid or not flyForce then return end
+        
+        if Options.Autofarm.Value or Options.OPFarm.Value then
+            
+            local mass = RootPart.AssemblyMass
+            local gravity = workspace.Gravity
+            local currentVelocity = RootPart.AssemblyLinearVelocity
+            
+            -- ดึงค่าจาก Slider
+            local maxSpeed = Options.FlySpeed.Value
+            local farmHeight = Options.FarmHeight.Value
+            
+            -- [สถานะ 1: บินไปเป้าหมายแบบใช้แรงดัน (Force-Based Approach)]
+            if isFlying and flyTargetPos then
+                flyForce.Enabled = true
+                
+                local finalTarget = flyTargetPos
+                if Options.Autofarm.Value then
+                    finalTarget = flyTargetPos + Vector3.new(0, farmHeight, 0)
+                end
+                
+                local direction = (finalTarget - RootPart.Position)
+                local distToFinal = direction.Magnitude
+                
+                -- ระยะเริ่มเบรคปรับตามความเร็ว (บินเร็ว เบรคไกลกว่า)
+                local brakingDistance = maxSpeed * 1.0 
+                local speedFactor = math.clamp((distToFinal / brakingDistance) * maxSpeed, 5, maxSpeed)
+                local targetVelocity = direction.Unit * speedFactor
+                
+                -- อัตราการตอบสนอง (P-Gain) ปรับเพิ่มขึ้นตามความเร็วสูงสุดเพื่อให้ทันแรงเร่ง
+                local pGain = math.clamp(maxSpeed / 5, 30, 80)
+                
+                local counterGravityForce = Vector3.new(0, mass * gravity, 0)
+                local driveForce = (targetVelocity - currentVelocity) * mass * pGain 
+                
+                flyForce.Force = counterGravityForce + driveForce
+                
+                -- ถึงเป้าหมาย (รัศมี 5 หน่วย)
+                if distToFinal < 5 then
+                    isFlying = false
+                    flyTargetPos = nil
+                    if Options.Autofarm.Value then
+                        lockHeight_Y = RootPart.Position.Y 
+                    end
+                    return
+                end
+            
+            -- [สถานะ 2: Hover แบบ OP Farm หรือ ล๊อคความสูง Normal Farm (ระบบ PD Controller)]
+            elseif lockHeight_Y or savedHoverY then
+                flyForce.Enabled = true
+                Humanoid.PlatformStand = Options.OPFarm.Value
+                
+                local targetY = savedHoverY or lockHeight_Y
+                
+                local targetPosition = Vector3.new(RootPart.Position.X, targetY, RootPart.Position.Z)
+                local positionError = targetPosition - RootPart.Position
+                
+                local correctionForce = (positionError * 40) - (currentVelocity * 25)
+                
+                flyForce.Force = (correctionForce * mass) + Vector3.new(0, mass * gravity, 0)
+                
+            -- [สถานะ 3: ยืนนิ่งๆ]
+            elseif not isFlying then
+                flyForce.Enabled = false
+                if not Options.OPFarm.Value and not Options.Autofarm.Value then
+                    Humanoid.PlatformStand = false
+                end
+            end
+        else
+            -- Reset เมื่อปิด Farm
+            if isFlying or savedHoverY or lockHeight_Y then
+                stopFlying()
+                savedHoverY = nil
+                lockHeight_Y = nil
+                Humanoid.PlatformStand = false
+            end
+        end
+    end)
+end)
+
+-- Reset เมื่อตาย (ต้องสร้าง Attachment และ Force ใหม่)
 Humanoid.Died:Connect(function()
+    stopFlying()
+    savedHoverY = nil
+    lockHeight_Y = nil
     opFarmInitialized = false
     Character = Player.CharacterAdded:Wait()
     RootPart = Character:WaitForChild("HumanoidRootPart")
     Humanoid = Character:WaitForChild("Humanoid")
+    setupFlyPhysics() -- <-- สร้างระบบฟิสิกส์ใหม่ให้ตัวละครใหม่
 end)
 
 spawn(function()
@@ -376,57 +575,103 @@ spawn(monitorRaidBosses)
 spawn(function()
     while task.wait(0.1) do
         if not Options.Autofarm.Value and not Options.OPFarm.Value then 
-            opFarmInitialized = false
-            Humanoid.PlatformStand = false 
-            farmingStarted = false
+            stopFlying()
+            savedHoverY = nil
+            lockHeight_Y = nil
+            opFarmInitialized = false; Humanoid.PlatformStand = false; farmingStarted = false
             continue 
         end
 
         local bt = getAvailableBossWeakPoint()
         local ac = getAliveTitanCount()
         local ck = true
-        
         if Options.UseMissionTimer.Value and ac <= LAST_TITAN_THRESHOLD then
             local mt = tonumber(Options.MinMissionTime.Value) or 60
             if not farmingStarted then farmingStarted = true; fallbackStartTime = tick() end
             ck = (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)) >= mt
         end
 
-        if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
-            -- ยืนนิ่งๆ แล้วฟันได้เลย ไม่มีระบบบิน
-            Humanoid.PlatformStand = false 
+                if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
+            savedHoverY = nil -- รีเซ็ต
+            
+            local farmHeight = Options.FarmHeight.Value
+            local ap = getRaidAnchorPos()
+            
+            -- [ปรับปรุง] ให้ OP Farm ใช้ระบบ VectorForce ผ่านตัวแปร savedHoverY เหมือน Normal Farm
+            if not opFarmInitialized then
+                savedHoverY = (ap and (ap.Y + farmHeight)) or (RootPart.Position.Y + farmHeight)
+                opFarmInitialized = true
+            end
+            
+            Humanoid.PlatformStand = true
             
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
 
-            if bt then 
-                executeBossBurst(bt, Options.BurstAmount.Value)
+            if isAnchorPhaseActive() and ap then
+                -- ระบบ VectorForce จะจับไปที่ตำแหน่ง Anchor เองโดยอัตโนมัติ ไม่ต้องยัด Velocity
+                lockHeight_Y = nil
+                savedHoverY = ap.Y + farmHeight
+                
+                local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
+                if #nt > 0 and ck then executeStealthSlash(nt, true) end
             else
-                local at = getAllTargets()
-                local lt = {}
-                for i = 1, math.min(#at, OP_MAX_TARGETS) do table.insert(lt, at[i]) end
-                if #lt > 0 and ck then 
-                    executeStealthSlash(lt, true) 
+                if bt then executeBossBurst(bt, Options.BurstAmount.Value)
+                else
+                    local at = getAllTargets(); local lt = {}; for i = 1, math.min(#at, OP_MAX_TARGETS) do table.insert(lt, at[i]) end
+                    if #lt > 0 and ck then 
+                        -- ถ้าไม่มี Anchor ให้ลอยตรงนั้นแล้วฟัน
+                        lockHeight_Y = RootPart.Position.Y
+                        executeStealthSlash(lt, true) 
+                    end
                 end
             end
             task.wait(1); continue 
         end
 
         if Options.Autofarm.Value then
+            savedHoverY = nil 
             opFarmInitialized = false
             
             if isBladeEmpty() then safeRefillBlades(); task.wait(1); continue end
             
-            -- ระบบ Auto Farm แบบไม่บิน: ยืนตรงไหนก็ฟันได้เลยเหมือน OPFarm
+            if isAnchorPhaseActive() then
+                local ap = getRaidAnchorPos()
+                if ap then
+                    -- [ปรับ] ใช้ระยะ 2 มิติ (แกน X,Z) ตรวจสอบว่าถึงเป้าหมายหรือยัง แทนระยะ 3 มิติ
+                    local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(ap.X, 0, ap.Z)).Magnitude
+                    if flatDist > 15 then 
+                        hookFlyTo(ap) 
+                    end
+                    
+                    local nt = getTargetsNearAnchor(Options.TargetLimit.Value, Options.AoERadius.Value)
+                    if #nt > 0 then
+                        if ck then executeStealthSlash(nt, false) end
+                        task.wait(math.max(0.1, Options.SlashDelay.Value))
+                    else task.wait(0.5) end
+                    continue 
+                end
+            end
+            
             if bt then
-                if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
-                task.wait(math.max(0.1, Options.SlashDelay.Value))
-            else
-                local at = getAllTargets()
-                local lt = {}
-                for i = 1, math.min(#at, Options.TargetLimit.Value) do table.insert(lt, at[i]) end
-                if #lt > 0 and ck then 
-                    executeStealthSlash(lt, false) 
+                local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(bt.Position.X, 0, bt.Position.Z)).Magnitude
+                if flatDist > 15 then 
+                    hookFlyTo(bt.Position)
+                else
+                    lockHeight_Y = RootPart.Position.Y
+                    if ck then executeBossBurst(bt, Options.BurstAmount.Value) end
                     task.wait(math.max(0.1, Options.SlashDelay.Value))
+                end
+            else
+                local t, ap = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value)
+                if #t > 0 and ap then
+                    local flatDist = (Vector3.new(RootPart.Position.X, 0, RootPart.Position.Z) - Vector3.new(ap.X, 0, ap.Z)).Magnitude
+                    if flatDist > 15 then
+                        hookFlyTo(ap)
+                    else
+                        lockHeight_Y = RootPart.Position.Y
+                        if ck then executeStealthSlash(t, false) end
+                        task.wait(math.max(0.1, Options.SlashDelay.Value))
+                    end
                 else 
                     task.wait(0.5) 
                 end
@@ -447,8 +692,9 @@ end)
 if ButtonsFolder then
     ButtonsFolder.ChildAdded:Connect(function(btn)
         if Options.Autofarm.Value or Options.OPFarm.Value then
+            stopFlying()
+            lockHeight_Y = nil
             opFarmInitialized = false
-            Humanoid.PlatformStand = false
             task.wait(0.15); PostRemote:FireServer("Attacks", "Slash_Escape"); btn:Destroy(); task.wait(0.3)
             local bt = getAvailableBossWeakPoint()
             if Options.OPFarm.Value then
@@ -456,7 +702,7 @@ if ButtonsFolder then
                 else local t = getAllTargets(); local l = {}; for i=1, math.min(#t, OP_MAX_TARGETS) do table.insert(l, t[i]) end; if #l>0 then executeStealthSlash(l, true) end end
             else
                 if bt then executeBossBurst(bt, Options.BurstAmount.Value)
-                else local t = getAllTargets(); local l = {}; for i=1, math.min(#t, Options.TargetLimit.Value) do table.insert(l, t[i]) end; if #l>0 then executeStealthSlash(l, false) end end
+                else local t, _ = getTargetCluster(Options.TargetLimit.Value, Options.AoERadius.Value); if #t>0 then executeStealthSlash(t, false) end end
             end
         end
     end)
@@ -498,5 +744,5 @@ local function autoSave() SaveManager:Save(getAutoSaveFile()) end
 for _, o in pairs(Options) do if o.OnChanged then o:OnChanged(autoSave) end end
 
 Window:SelectTab(1)
-Library:Notify({Title="Loaded", Content="No-Fly Version Loaded!", Duration=5})
+Library:Notify({Title="Loaded", Content="Enjoy!", Duration=5})
 SaveManager:LoadAutoloadConfig()
