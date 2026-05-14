@@ -591,7 +591,7 @@ spawn(function()
             ck = (Workspace:GetAttribute("Seconds") or (tick() - fallbackStartTime)) >= mt
         end
 
-                if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
+            if Options.OPFarm.Value and Workspace:GetAttribute("Map") ~= "Lobby" then
             savedHoverY = nil -- รีเซ็ต
             
             local farmHeight = Options.FarmHeight.Value
