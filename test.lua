@@ -195,23 +195,23 @@ end)
 -- [ 3. REMOTE CALL HUMANIZATION ]
 -- ==========================================
 
--- Add random delays to remote calls (make it look human)
-local OriginalFireServer
-local OriginalInvokeServer
+-- -- Add random delays to remote calls (make it look human)
+-- local OriginalFireServer
+-- local OriginalInvokeServer
 
--- Hook FireServer
-if getgc then
-    for _, obj in pairs(getgc(true)) do
-        if typeof(obj) == "Instance" and obj:IsA("RemoteEvent") then
-            local oldFire = obj.FireServer
-            obj.FireServer = newcclosure(function(self, ...)
-                -- Random micro-delay (1-15ms)
-                task.wait(math.random(1, 15) / 1000)
-                return oldFire(self, ...)
-            end)
-        end
-    end
-end
+-- -- Hook FireServer
+-- if getgc then
+--     for _, obj in pairs(getgc(true)) do
+--         if typeof(obj) == "Instance" and obj:IsA("RemoteEvent") then
+--             local oldFire = obj.FireServer
+--             obj.FireServer = newcclosure(function(self, ...)
+--                 -- Random micro-delay (1-15ms)
+--                 task.wait(math.random(1, 15) / 1000)
+--                 return oldFire(self, ...)
+--             end)
+--         end
+--     end
+-- end
 
 -- ==========================================
 -- [ 4. ANTI-LOGGING PROTECTION ]
