@@ -44,6 +44,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
 local virtualUser = game:GetService("VirtualUser")
+local UserInputService = game:GetService("UserInputService")
 
 local DataService = require(ReplicatedStorage.Packages._Index["leifstout_dataservice@0.4.0"].dataservice.DataServiceClient)
 local UpgradeTree = require(ReplicatedStorage.Source.Features.Upgrades.UpgradeTree)
