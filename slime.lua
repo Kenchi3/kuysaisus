@@ -43,7 +43,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local Player = Players.LocalPlayer
-local virtualUser = game:GetService("VirtualUser")
+local VirtualUser       = game:GetService("VirtualUser")
 local UserInputService = game:GetService("UserInputService")
 
 local DataService = require(ReplicatedStorage.Packages._Index["leifstout_dataservice@0.4.0"].dataservice.DataServiceClient)
@@ -234,10 +234,11 @@ local UpgradeListParagraph = Tabs.Upgrades:CreateParagraph("CurrentUpgradesList"
 -- ========================
 -- Anti AFK
 -- ========================
-Player.Idled:Connect(function()
-    virtualUser:CaptureController()
-    virtualUser:ClickButton2(Vector2.new())
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
 end)
+
 
 -- ==========================================
 -- [ 4. ระบบ Auto Roll & Equip ]
