@@ -258,17 +258,34 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ X. ระบบ Auto Fire Slime (Lock Target Version) ]
+-- [ X. ระบบ Auto Fire Slime (Final Version) ]
 -- ==========================================
 local RunService = game:GetService("RunService")
 
--- ตัวแปรเก็บเป้าหมายปัจจุบัน
 local currentTargetInstance = nil
 
--- ลูปแรง (0 วินาที) สำหรับบังคับให้ Targeted.Visible = true
+-- [Function] แปลง String เป็น Number (รองรับ 1.80K, 5M, 100)
+local function convertTextToNumber(str)
+    if not str then return 0 end
+    str = tostring(str):gsub(",", "") -- ตัด comma ออก
+    
+    local multiplier = 1
+    if str:find("K") then multiplier = 10^3
+    elseif str:find("M") then multiplier = 10^6
+    elseif str:find("B") then multiplier = 10^9
+    end
+    
+    -- ดึงเฉพาะตัวเลขและจุดทศนิยมออกมา
+    local numberPart = str:match("([%d%.]+)")
+    if numberPart then
+        return tonumber(numberPart) * multiplier
+    end
+    return 0
+end
+
+-- ลูปแรงสำหรับบังคับ Targeted.Visible
 RunService.RenderStepped:Connect(function()
     if Library.Unloaded then return end
-    
     if Options.AutoFireSlimeToggle.Value and currentTargetInstance then
         local healthGui = currentTargetInstance:FindFirstChild("HealthBarBillboardGui") 
         if not healthGui then healthGui = currentTargetInstance:FindFirstChild("HealthBarBoardGui") end
@@ -282,9 +299,9 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ลูปหลักสำหรับค้นหาและยิง
+-- ลูปหลัก
 task.spawn(function()
-    while task.wait(0.1) do -- ลดการเช็คลงเล็กน้อยเพื่อประสิทธิภาพ
+    while task.wait(0.1) do
         if Library.Unloaded then break end
         
         if Options.AutoFireSlimeToggle.Value then
@@ -308,34 +325,34 @@ task.spawn(function()
             local isTargetValid = false
             
             if currentTargetInstance and currentTargetInstance.Parent then
-                -- ดึงค่า HP ปัจจุบันของเป้าหมายที่ล็อคไว้
                 local healthGui = currentTargetInstance:FindFirstChild("HealthBarBillboardGui") or currentTargetInstance:FindFirstChild("HealthBarBoardGui")
                 if healthGui then
                     local hpText = healthGui:FindFirstChild("Hp")
                     if hpText and hpText:IsA("TextLabel") then
-                        local current = hpText.Text:match("(%d+)/")
-                        if current and tonumber(current) > 0 then
+                        -- ใช้ Pattern ง่ายๆ แบ่งด้วย /
+                        local currentStr = hpText.Text:match("([^/]+)")
+                        local currentHP = convertTextToNumber(currentStr)
+                        
+                        if currentHP > 0 then
                             isTargetValid = true
                         end
                     end
                 end
             end
 
-            -- ถ้าเป้าหมายเดิมยังไม่ตาย และยังอยู่ในเกม
+            -- ถ้าเป้าหมายเดิมยังไม่ตาย
             if isTargetValid then
                 pcall(function()
                     SlimeGunRemote:InvokeServer("tryFireSlimeGun", tonumber(currentTargetInstance.Name))
                 end)
-                
-                -- ข้ามการค้นหาใหม่ และวนไปต่อเลย
                 continue 
             end
             
-            -- ถ้าเป้าหมายเดิมตายแล้ว หรือไม่มีเป้าหมาย ให้เคลียร์ค่าเก่า
+            -- ถ้าเป้าตายแล้ว หาใหม่
             currentTargetInstance = nil
 
             -- ==================================================
-            -- [ Logic ค้นหาเป้าหมายใหม่ (ทำงานเมื่อไม่มีเป้าล็อค) ]
+            -- [ Logic ค้นหาเป้าหมายใหม่ ]
             -- ==================================================
             local validTargets = {}
 
@@ -350,18 +367,23 @@ task.spawn(function()
                         local hpText = healthGui:FindFirstChild("Hp")
                         
                         if hpText and hpText:IsA("TextLabel") then
-                            local textContent = hpText.Text 
-                            local current, max = textContent:match("(%d+)/(%d+)")
+                            -- แยกข้อความ HP ด้วย /
+                            local currentStr, maxStr = hpText.Text:match("([^/]+)/([^/]+)")
                             
-                            if current and max and tonumber(current) > 0 then -- เช็คว่า HP > 0 ด้วย
-                                local distance = (rootPart.Position - hrp.Position).Magnitude
+                            if currentStr then
+                                local currentHP = convertTextToNumber(currentStr)
+                                local maxHP = convertTextToNumber(maxStr)
                                 
-                                table.insert(validTargets, {
-                                    Instance = enemy,
-                                    Id = enemyId,
-                                    HP = tonumber(max),
-                                    Distance = distance
-                                })
+                                if currentHP > 0 then
+                                    local distance = (rootPart.Position - hrp.Position).Magnitude
+                                    
+                                    table.insert(validTargets, {
+                                        Instance = enemy,
+                                        Id = enemyId,
+                                        HP = currentHP, -- ใช้ค่าที่คำนวณแล้ว (เช่น 1800)
+                                        Distance = distance
+                                    })
+                                end
                             end
                         end
                     end
@@ -381,21 +403,17 @@ task.spawn(function()
                 end
 
                 if targetEnemy then
-                    -- ล็อคเป้าหมายใหม่
                     currentTargetInstance = targetEnemy.Instance
-                    -- ยิง
                     pcall(function()
                         SlimeGunRemote:InvokeServer("tryFireSlimeGun", targetEnemy.Id)
                     end)
                 end
             end
         else
-            -- ถ้าปิด Toggle ให้เคลียร์เป้าหมายทั้งหมด
             currentTargetInstance = nil
         end
     end
 end)
-
 -- ==========================================
 -- [ 6. ระบบ Auto Collect Loots ]
 -- ==========================================
