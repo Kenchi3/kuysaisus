@@ -103,6 +103,14 @@ local BoostRemote = ReplicatedStorage:WaitForChild("Packages")
     :WaitForChild("BoostService")
     :WaitForChild("RemoteFunction")
 
+local SlimeGunRemote = ReplicatedStorage:WaitForChild("Packages")
+    :WaitForChild("_Index")
+    :WaitForChild("leifstout_networker@0.3.1")
+    :WaitForChild("networker")
+    :WaitForChild("_remotes")
+    :WaitForChild("SlimeGunService")
+    :WaitForChild("RemoteFunction")
+
 local lootFolder = Workspace:WaitForChild("Loot")
 local zonesFolder = Workspace:WaitForChild("Zones")
 
