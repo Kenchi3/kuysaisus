@@ -146,6 +146,22 @@ Tabs.Main:CreateToggle("AutoRebirthToggle", {
     Default = false
 })
 
+-- Combat Section
+Tabs.Main:CreateSection("Combat")
+
+Tabs.Main:CreateDropdown("TargetMethodDropdown", {
+    Title = "Target Method",
+    Description = "Choose how to select target",
+    Values = {"Closest", "Highest HP"},
+    Multi = false,
+    Default = 1
+})
+
+Tabs.Main:CreateToggle("AutoFireSlimeToggle", {
+    Title = "Auto Fire Slime",
+    Description = "Automatically shoots slimes based on selected method",
+    Default = false
+})
 
 Tabs.Main:CreateSection("Loots")
 
@@ -239,7 +255,87 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 5. ระบบ Auto Collect Loots ]
+-- [ 5. ระบบ Auto Fire Slime (แก้ไขแล้ว) ]
+-- ==========================================
+task.spawn(function()
+    while task.wait(0.05) do
+        if Library.Unloaded then break end
+        
+        if Options.AutoFireSlimeToggle.Value then
+            local character = Player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            if not hrp then continue end
+
+            -- ค้นหา Enemies Folder
+            local gameplayFolder = Workspace:FindFirstChild("Gameplay55")
+            if not gameplayFolder then continue end
+            
+            local enemiesFolder = gameplayFolder:FindFirstChild("Enemies")
+            if not enemiesFolder then continue end
+
+            local validTargets = {}
+
+            for _, enemy in ipairs(enemiesFolder:GetChildren()) do
+                -- ตรวจสอบว่าชื่อเป็นตัวเลขไหม (เนื่องจาก args ต้องการ number)
+                local enemyId = tonumber(enemy.Name)
+                
+                if enemyId then -- ถ้าแปลงเป็นตัวเลขได้ แสดงว่าเป็น Slime ที่ต้องการ
+                    local rootPart = enemy:FindFirstChild("RootPart")
+                    local healthGui = enemy:FindFirstChild("HealthBarBillboardGui")
+                    
+                    if rootPart and healthGui then
+                        local hpText = healthGui:FindFirstChild("Hp")
+                        
+                        if hpText and hpText:IsA("TextLabel") then
+                            local textContent = hpText.Text -- "current/max"
+                            local current, max = textContent:match("(%d+)/(%d+)")
+                            
+                            if current and max then
+                                local distance = (rootPart.Position - hrp.Position).Magnitude
+                                
+                                table.insert(validTargets, {
+                                    Instance = enemy,
+                                    Id = enemyId, -- เก็บค่าเลขไว้ส่ง Remote
+                                    HP = tonumber(max),
+                                    Distance = distance
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- เลือกเป้าหมาย
+            if #validTargets > 0 then
+                local targetEnemy = nil
+
+                if Options.TargetMethodDropdown.Value == "Closest" then
+                    table.sort(validTargets, function(a, b)
+                        return a.Distance < b.Distance
+                    end)
+                    targetEnemy = validTargets[1]
+                
+                elseif Options.TargetMethodDropdown.Value == "Highest HP" then
+                    table.sort(validTargets, function(a, b)
+                        return a.HP > b.HP
+                    end)
+                    targetEnemy = validTargets[1]
+                end
+
+                -- ยิง Slime (ส่งค่าเป็น number)
+                if targetEnemy then
+                    pcall(function()
+                        -- ใช้ targetEnemy.Id (number) แทน targetEnemy.Instance.Name (string)
+                        SlimeGunRemote:InvokeServer("tryFireSlimeGun", targetEnemy.Id)
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- [ 6. ระบบ Auto Collect Loots ]
 -- ==========================================
 local function collectLoot(lootInstance)
     if not Options.AutoCollectToggle.Value then return end
@@ -258,7 +354,7 @@ lootFolder.ChildAdded:Connect(function(newChild)
 end)
 
 -- ==========================================
--- [ 6. ระบบ Auto Zones ]
+-- [ 7. ระบบ Auto Zones ]
 -- ==========================================
 local function isPlayerInZone(zoneId)
     local character = Player.Character
@@ -306,7 +402,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 7. ระบบ Auto Rebirth ]
+-- [ 8. ระบบ Auto Rebirth ]
 -- ==========================================
 task.spawn(function()
     while task.wait(3) do
@@ -318,7 +414,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 8. ระบบ Auto Use Boost ]
+-- [ 9. ระบบ Auto Use Boost ]
 -- ==========================================
 local boostNames = {luck = "Luck", ultraLuck = "Ultra Luck", rollSpeed = "Roll Speed", currency = "Coin"}
 
@@ -377,7 +473,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 9. ระบบ Smart Auto Upgrade & Realtime UI ]
+-- [ 10. ระบบ Smart Auto Upgrade & Realtime UI ]
 -- ==========================================
 local function updateUpgradeListUI(currentupgrades)
     local lines = {}
