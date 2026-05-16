@@ -5,8 +5,10 @@ local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOog
 local SaveManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/SaveManager.luau"))()
 local InterfaceManager = loadstring(game:HttpGetAsync("https://raw.githubusercontent.com/ActualMasterOogway/Fluent-Renewed/master/Addons/InterfaceManager.luau"))()
 
+local WindowTitle = "Klakuylek Hub - Slime RNG"
+
 local Window = Library:CreateWindow{
-    Title = "Klakuylek Hub - Slime RNG",
+    Title = WindowTitle,
     SubTitle = "by nxnn_nn",
     TabWidth = 160,
     Size = UDim2.fromOffset(830, 525),
@@ -255,47 +257,107 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 5. ระบบ Auto Fire Slime (แก้ไขแล้ว) ]
+-- [ X. ระบบ Auto Fire Slime (Lock Target Version) ]
 -- ==========================================
+local RunService = game:GetService("RunService")
+
+-- ตัวแปรเก็บเป้าหมายปัจจุบัน
+local currentTargetInstance = nil
+
+-- ลูปแรง (0 วินาที) สำหรับบังคับให้ Targeted.Visible = true
+RunService.RenderStepped:Connect(function()
+    if Library.Unloaded then return end
+    
+    if Options.AutoFireSlimeToggle.Value and currentTargetInstance then
+        local healthGui = currentTargetInstance:FindFirstChild("HealthBarBillboardGui") 
+        if not healthGui then healthGui = currentTargetInstance:FindFirstChild("HealthBarBoardGui") end
+        
+        if healthGui then
+            local targetedObj = healthGui:FindFirstChild("Targeted")
+            if targetedObj then
+                targetedObj.Visible = true
+            end
+        end
+    end
+end)
+
+-- ลูปหลักสำหรับค้นหาและยิง
 task.spawn(function()
-    while task.wait(0.05) do
+    while task.wait(0.1) do -- ลดการเช็คลงเล็กน้อยเพื่อประสิทธิภาพ
         if Library.Unloaded then break end
         
         if Options.AutoFireSlimeToggle.Value then
             local character = Player.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
-            if not hrp then continue end
-
-            -- ค้นหา Enemies Folder
-            local gameplayFolder = Workspace:FindFirstChild("Gameplay55")
-            if not gameplayFolder then continue end
             
-            local enemiesFolder = gameplayFolder:FindFirstChild("Enemies")
-            if not enemiesFolder then continue end
+            if not hrp then 
+                currentTargetInstance = nil
+                continue 
+            end
+            
+            local enemiesFolder = Workspace:FindFirstChild("Enemies", true)
+            if not enemiesFolder then 
+                currentTargetInstance = nil
+                continue 
+            end
 
+            -- ==================================================
+            -- [ Logic ตรวจสอบเป้าหมายเดิม (Lock Target) ]
+            -- ==================================================
+            local isTargetValid = false
+            
+            if currentTargetInstance and currentTargetInstance.Parent then
+                -- ดึงค่า HP ปัจจุบันของเป้าหมายที่ล็อคไว้
+                local healthGui = currentTargetInstance:FindFirstChild("HealthBarBillboardGui") or currentTargetInstance:FindFirstChild("HealthBarBoardGui")
+                if healthGui then
+                    local hpText = healthGui:FindFirstChild("Hp")
+                    if hpText and hpText:IsA("TextLabel") then
+                        local current = hpText.Text:match("(%d+)/")
+                        if current and tonumber(current) > 0 then
+                            isTargetValid = true
+                        end
+                    end
+                end
+            end
+
+            -- ถ้าเป้าหมายเดิมยังไม่ตาย และยังอยู่ในเกม
+            if isTargetValid then
+                pcall(function()
+                    SlimeGunRemote:InvokeServer("tryFireSlimeGun", tonumber(currentTargetInstance.Name))
+                end)
+                
+                -- ข้ามการค้นหาใหม่ และวนไปต่อเลย
+                continue 
+            end
+            
+            -- ถ้าเป้าหมายเดิมตายแล้ว หรือไม่มีเป้าหมาย ให้เคลียร์ค่าเก่า
+            currentTargetInstance = nil
+
+            -- ==================================================
+            -- [ Logic ค้นหาเป้าหมายใหม่ (ทำงานเมื่อไม่มีเป้าล็อค) ]
+            -- ==================================================
             local validTargets = {}
 
             for _, enemy in ipairs(enemiesFolder:GetChildren()) do
-                -- ตรวจสอบว่าชื่อเป็นตัวเลขไหม (เนื่องจาก args ต้องการ number)
                 local enemyId = tonumber(enemy.Name)
                 
-                if enemyId then -- ถ้าแปลงเป็นตัวเลขได้ แสดงว่าเป็น Slime ที่ต้องการ
+                if enemyId then
                     local rootPart = enemy:FindFirstChild("RootPart")
-                    local healthGui = enemy:FindFirstChild("HealthBarBillboardGui")
+                    local healthGui = enemy:FindFirstChild("HealthBarBillboardGui") or enemy:FindFirstChild("HealthBarBoardGui")
                     
                     if rootPart and healthGui then
                         local hpText = healthGui:FindFirstChild("Hp")
                         
                         if hpText and hpText:IsA("TextLabel") then
-                            local textContent = hpText.Text -- "current/max"
+                            local textContent = hpText.Text 
                             local current, max = textContent:match("(%d+)/(%d+)")
                             
-                            if current and max then
+                            if current and max and tonumber(current) > 0 then -- เช็คว่า HP > 0 ด้วย
                                 local distance = (rootPart.Position - hrp.Position).Magnitude
                                 
                                 table.insert(validTargets, {
                                     Instance = enemy,
-                                    Id = enemyId, -- เก็บค่าเลขไว้ส่ง Remote
+                                    Id = enemyId,
                                     HP = tonumber(max),
                                     Distance = distance
                                 })
@@ -305,31 +367,30 @@ task.spawn(function()
                 end
             end
 
-            -- เลือกเป้าหมาย
             if #validTargets > 0 then
                 local targetEnemy = nil
 
                 if Options.TargetMethodDropdown.Value == "Closest" then
-                    table.sort(validTargets, function(a, b)
-                        return a.Distance < b.Distance
-                    end)
+                    table.sort(validTargets, function(a, b) return a.Distance < b.Distance end)
                     targetEnemy = validTargets[1]
                 
                 elseif Options.TargetMethodDropdown.Value == "Highest HP" then
-                    table.sort(validTargets, function(a, b)
-                        return a.HP > b.HP
-                    end)
+                    table.sort(validTargets, function(a, b) return a.HP > b.HP end)
                     targetEnemy = validTargets[1]
                 end
 
-                -- ยิง Slime (ส่งค่าเป็น number)
                 if targetEnemy then
+                    -- ล็อคเป้าหมายใหม่
+                    currentTargetInstance = targetEnemy.Instance
+                    -- ยิง
                     pcall(function()
-                        -- ใช้ targetEnemy.Id (number) แทน targetEnemy.Instance.Name (string)
                         SlimeGunRemote:InvokeServer("tryFireSlimeGun", targetEnemy.Id)
                     end)
                 end
             end
+        else
+            -- ถ้าปิด Toggle ให้เคลียร์เป้าหมายทั้งหมด
+            currentTargetInstance = nil
         end
     end
 end)
@@ -570,6 +631,98 @@ task.spawn(function()
         pcall(updateBoostUI)
     end
 end)
+
+
+-- ========================
+-- 🌀 Mobile Toggle Button (Dynamic Title Check)
+-- ========================
+local MobileGui = Instance.new("ScreenGui")
+MobileGui.Name            = "MobileToggleGui"
+MobileGui.Parent          = game:GetService("CoreGui")
+MobileGui.IgnoreGuiInset  = true
+MobileGui.ResetOnSpawn    = false
+
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name             = "ToggleButton"
+ToggleButton.Parent           = MobileGui
+ToggleButton.BackgroundColor3 = Color3.fromRGB(20,20,20)
+ToggleButton.BorderSizePixel  = 0
+ToggleButton.Size             = UDim2.new(0,60,0,60)
+ToggleButton.AnchorPoint      = Vector2.new(0.5,0.5)
+ToggleButton.Position         = UDim2.new(0.5,0,0.15,0)
+ToggleButton.Image            = "rbxassetid://135519443641857"
+ToggleButton.ImageColor3      = Color3.fromRGB(255,255,255)
+
+local UICorner  = Instance.new("UICorner");  UICorner.CornerRadius  = UDim.new(0,15);  UICorner.Parent  = ToggleButton
+local UIStroke  = Instance.new("UIStroke");  UIStroke.Thickness     = 3;               UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; UIStroke.Parent = ToggleButton
+
+-- Rainbow Effect
+task.spawn(function()
+    local speed = 0.15
+    while MobileGui and MobileGui.Parent do 
+        UIStroke.Color = Color3.fromHSV(tick() * speed % 1, 0.8, 1)
+        RunService.Heartbeat:Wait()
+    end
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+    if Window then
+        Window:Minimize()
+    else
+        MobileGui:Destroy()
+    end
+end)
+
+local dragging, dragInput, dragStart, startPos
+
+ToggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = ToggleButton.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+ToggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        TweenService:Create(ToggleButton, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        }):Play()
+    end
+end)
+
+-- 🔥 [Dynamic Watchdog]
+task.spawn(function()
+    while task.wait(1) do
+        if not MobileGui or not MobileGui.Parent then break end
+        
+        local isWindowAlive = false
+        
+        -- 🧩 ใช้ตัวแปร WindowTitle มาต่อชื่อ GUI แบบ Dynamic
+        local expectedGuiName = "FluentRenewed_" .. WindowTitle
+        
+        pcall(function()
+            local RobloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
+            if RobloxGui and RobloxGui:FindFirstChild(expectedGuiName) then
+                isWindowAlive = true
+            end
+        end)
+
+        if not isWindowAlive then
+            MobileGui:Destroy()
+            break
+        end
+    end
+end)
+
 
 -- ==========================================
 -- [ 10. Setup SaveManager & InterfaceManager ]
