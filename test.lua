@@ -1,4 +1,429 @@
 -- ==========================================
+-- [ ANTI-DETECTION SYSTEM v6 - ADVANCED ]
+-- ==========================================
+-- วางโค้ดนี้ไว้ก่อน Fluent UI Library
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1367840132853534923/RP_gTr5Yxii9UDtT6gw5iLaGEvzW1aNrh9g4WsOer471voy6GPyPcIgVbFnrkOTaO020" -- ใส่ webhook ของคุณเอง (optional)
+
+-- ==========================================
+-- [ 1. EARLY INITIALIZATION - ป้องกัน Detection ก่อน Script โหลด ]
+-- ==========================================
+
+-- Spoof Executor Identity (ให้ดูเหมือนไม่ได้ใช้ executor)
+if identifyexecutor then
+    local old = identifyexecutor
+    identifyexecutor = function()
+        return "Unknown"
+    end
+end
+
+-- Hide Exploit Environment
+if getgenv then
+    local blockedKeys = {
+        "isexecutorclosure", "checkcaller", "hookfunction", 
+        "hookmetamethod", "getnamecallmethod", "getcallingscript",
+        "newcclosure", "islclosure", "isourclosure"
+    }
+    
+    for _, key in pairs(blockedKeys) do
+        if getgenv()[key] then
+            local original = getgenv()[key]
+            getgenv()[key] = function(...)
+                -- Return fake safe values
+                if key == "checkcaller" then return true end
+                if key == "islclosure" then return true end
+                return original(...)
+            end
+        end
+    end
+end
+
+-- ==========================================
+-- [ 2. TRIPLE LAYER ATTRIBUTE PROTECTION ]
+-- ==========================================
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local SHADOW_BAN_ATTRS = {
+    "Blacklisted", "Exploiter", "ShadowBanned", "Banned", 
+    "Flagged", "Cheater", "LowDropRate", "TradeBlocked",
+    "DetectionFlag", "AntiCheat", "Suspicious"
+}
+
+local lastWebhookSend = {}
+local detectionStats = {Hook = 0, Event = 0, Loop = 0}
+
+-- Webhook Function (Silent)
+local function sendWebhook(attrName, method, value)
+    if WEBHOOK_URL == "" then return end
+    
+    local key = attrName .. "_" .. method
+    if lastWebhookSend[key] and tick() - lastWebhookSend[key] < 5 then return end
+    lastWebhookSend[key] = tick()
+    detectionStats[method] = detectionStats[method] + 1
+    
+    local requestFunc = syn and syn.request or http_request or request
+    if not requestFunc then return end
+    
+    pcall(function()
+        requestFunc({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                embeds = {{
+                    title = "🛡️ " .. method .. " Detection",
+                    fields = {
+                        {name = "Attribute", value = attrName, inline = true},
+                        {name = "Value", value = tostring(value), inline = true},
+                        {name = "Stats", value = string.format("H:%d E:%d L:%d", 
+                            detectionStats.Hook, detectionStats.Event, detectionStats.Loop)}
+                    },
+                    color = method == "Hook" and 16711680 or method == "Event" and 16753920 or 16776960,
+                    timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+                }}
+            })
+        })
+    end)
+end
+
+-- ==========================================
+-- [ LAYER 1: ADVANCED HOOK PROTECTION ]
+-- ==========================================
+
+-- Hook __namecall with Whitelist System
+local OldNamecall
+OldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args = {...}
+    
+    -- Block SetAttribute on LocalPlayer
+    if method == "SetAttribute" and self == LocalPlayer then
+        local attrName = args[1]
+        
+        if table.find(SHADOW_BAN_ATTRS, attrName) then
+            -- Check if called by game (not our script)
+            if not checkcaller() then
+                local oldValue = LocalPlayer:GetAttribute(attrName)
+                warn("🎣 HOOK BLOCKED:", attrName, "=", args[2])
+                
+                task.spawn(function()
+                    sendWebhook(attrName, "Hook", args[2])
+                end)
+                
+                return nil -- Block the call
+            end
+        end
+    end
+    
+    return OldNamecall(self, ...)
+end))
+
+-- Hook __index to hide our modifications
+local OldIndex
+OldIndex = hookmetamethod(game, "__index", newcclosure(function(self, key)
+    -- Spoof attribute reads
+    if self == LocalPlayer and key == "GetAttribute" then
+        local original = OldIndex(self, key)
+        return function(_, attrName)
+            if table.find(SHADOW_BAN_ATTRS, attrName) then
+                -- Always return nil for banned attributes
+                return nil
+            end
+            return original(self, attrName)
+        end
+    end
+    
+    return OldIndex(self, key)
+end))
+
+-- ==========================================
+-- [ LAYER 2: EVENT LISTENER ]
+-- ==========================================
+
+for _, attrName in pairs(SHADOW_BAN_ATTRS) do
+    -- Clear existing attributes
+    pcall(function()
+        if LocalPlayer:GetAttribute(attrName) then
+            LocalPlayer:SetAttribute(attrName, nil)
+            warn("🧹 CLEARED:", attrName)
+        end
+    end)
+    
+    -- Monitor changes
+    LocalPlayer:GetAttributeChangedSignal(attrName):Connect(function()
+        local value = LocalPlayer:GetAttribute(attrName)
+        
+        if value ~= nil then
+            warn("📡 EVENT BLOCKED:", attrName, "=", value)
+            
+            task.spawn(function()
+                sendWebhook(attrName, "Event", value)
+            end)
+            
+            -- Immediately remove
+            LocalPlayer:SetAttribute(attrName, nil)
+        end
+    end)
+end
+
+-- ==========================================
+-- [ LAYER 3: CONTINUOUS MONITOR ]
+-- ==========================================
+
+spawn(function()
+    while task.wait(0.3) do
+        for _, attrName in pairs(SHADOW_BAN_ATTRS) do
+            local value = LocalPlayer:GetAttribute(attrName)
+            
+            if value ~= nil then
+                warn("🔄 LOOP DETECTED:", attrName, "=", value)
+                
+                task.spawn(function()
+                    sendWebhook(attrName, "Loop", value)
+                end)
+                
+                LocalPlayer:SetAttribute(attrName, nil)
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- [ 3. REMOTE CALL HUMANIZATION ]
+-- ==========================================
+
+-- Add random delays to remote calls (make it look human)
+local OriginalFireServer
+local OriginalInvokeServer
+
+-- Hook FireServer
+if getgc then
+    for _, obj in pairs(getgc(true)) do
+        if typeof(obj) == "Instance" and obj:IsA("RemoteEvent") then
+            local oldFire = obj.FireServer
+            obj.FireServer = newcclosure(function(self, ...)
+                -- Random micro-delay (1-15ms)
+                task.wait(math.random(1, 15) / 1000)
+                return oldFire(self, ...)
+            end)
+        end
+    end
+end
+
+-- ==========================================
+-- [ 4. ANTI-LOGGING PROTECTION ]
+-- ==========================================
+
+-- Spoof debug.traceback to hide our stack traces
+local OldTraceback = debug.traceback
+debug.traceback = newcclosure(function(...)
+    local trace = OldTraceback(...)
+    
+    -- Remove executor-related paths
+    trace = trace:gsub("@%S+", "@game.CoreGui")
+    trace = trace:gsub("loadstring%b()", "CoreScript")
+    
+    return trace
+end)
+
+-- ==========================================
+-- [ 5. VELOCITY/POSITION SMOOTHING ]
+-- ==========================================
+
+-- Anti-impossible-movement detection
+local LastPosition = nil
+local LastVelocity = Vector3.new(0, 0, 0)
+local MAX_REALISTIC_SPEED = 500 -- studs/sec
+
+spawn(function()
+    while task.wait(0.1) do
+        local char = LocalPlayer.Character
+        if not char then continue end
+        
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+        
+        if LastPosition then
+            local distance = (root.Position - LastPosition).Magnitude
+            local speed = distance / 0.1 -- studs per second
+            
+            -- If speed is impossibly high, smooth it
+            if speed > MAX_REALISTIC_SPEED then
+                local direction = (root.Position - LastPosition).Unit
+                local smoothedPos = LastPosition + (direction * MAX_REALISTIC_SPEED * 0.1)
+                
+                -- Don't actually teleport, just warn
+                -- (actual smoothing would interfere with farm)
+                -- root.CFrame = CFrame.new(smoothedPos)
+            end
+        end
+        
+        LastPosition = root.Position
+    end
+end)
+
+-- ==========================================
+-- [ 6. HITBOX REGISTRATION RANDOMIZATION ]
+-- ==========================================
+
+-- Make damage values more realistic (not perfect hits every time)
+local OriginalGetRemote = game.ReplicatedStorage.Assets.Remotes:WaitForChild("GET")
+local OldInvoke = OriginalGetRemote.InvokeServer
+
+OriginalGetRemote.InvokeServer = newcclosure(function(self, action, subAction, ...)
+    local args = {...}
+    
+    if action == "Hitboxes" and subAction == "Register" then
+        -- args[1] = nape part
+        -- args[2] = damage
+        -- args[3] = crit
+        
+        if args[2] then
+            -- Add ±5% variance to damage
+            local variance = math.random(-5, 5) / 100
+            args[2] = math.floor(args[2] * (1 + variance))
+        end
+        
+        if args[3] then
+            -- Add ±10% variance to crit
+            local variance = math.random(-10, 10) / 100
+            args[3] = math.floor(args[3] * (1 + variance))
+        end
+    end
+    
+    return OldInvoke(self, action, subAction, unpack(args))
+end)
+
+-- ==========================================
+-- [ 7. ANTI-PATTERN DETECTION ]
+-- ==========================================
+
+-- Track slash timing to avoid perfect patterns
+local SlashTimestamps = {}
+local MIN_SLASH_VARIANCE = 0.05 -- 50ms minimum variance
+
+local OriginalPostRemote = game.ReplicatedStorage.Assets.Remotes:WaitForChild("POST")
+local OldFire = OriginalPostRemote.FireServer
+
+OriginalPostRemote.FireServer = newcclosure(function(self, action, subAction, ...)
+    if action == "Attacks" and subAction == "Slash" then
+        local now = tick()
+        
+        -- Add variance to slash timing
+        if #SlashTimestamps > 0 then
+            local lastSlash = SlashTimestamps[#SlashTimestamps]
+            local timeSince = now - lastSlash
+            
+            -- If too consistent, add random delay
+            if timeSince < 0.1 then
+                task.wait(math.random(10, 50) / 1000)
+            end
+        end
+        
+        table.insert(SlashTimestamps, tick())
+        
+        -- Keep only last 10 slashes
+        if #SlashTimestamps > 10 then
+            table.remove(SlashTimestamps, 1)
+        end
+    end
+    
+    return OldFire(self, action, subAction, ...)
+end)
+
+-- ==========================================
+-- [ 8. DATASTORE BYPASS CHECK ]
+-- ==========================================
+
+-- Enhanced shadow ban check (ใช้แทนของเดิมใน script)
+getgenv().checkShadowBan = function()
+    local bannedKeys = {}
+    
+    pcall(function()
+        local data = game.ReplicatedStorage.Assets.Remotes.GET:InvokeServer("Data", "Get")
+        
+        for key, value in pairs(data) do
+            local lowerKey = key:lower()
+            
+            -- Check both key name and value
+            if lowerKey:match("blacklist") or lowerKey:match("exploit") or 
+               lowerKey:match("banned") or lowerKey:match("flag") then
+                
+                -- Skip known safe keys
+                if key ~= "Is_Blacklisted" and key ~= "Is_Blacklisted_NEW" then
+                    -- Check if value is truthy
+                    if value == true or value == 1 or value == "true" then
+                        table.insert(bannedKeys, key .. " = " .. tostring(value))
+                    end
+                end
+            end
+        end
+    end)
+    
+    return #bannedKeys > 0, bannedKeys
+end
+
+-- ==========================================
+-- [ 9. EXECUTOR FINGERPRINT CLEANING ]
+-- ==========================================
+
+-- Remove executor-specific globals
+local executorGlobals = {
+    "syn", "Synapse", "SENTINEL_V2", "WRD_LOADED", "pebc_execute",
+    "KRNL_LOADED", "OXYGEN_LOADED", "SCRIPTWARE", "is_sirhurt_closure"
+}
+
+for _, global in pairs(executorGlobals) do
+    if getgenv()[global] then
+        getgenv()[global] = nil
+    end
+end
+
+-- ==========================================
+-- [ 10. SAFE MODE WRAPPER ]
+-- ==========================================
+
+-- Wrap the entire farm script in error handling
+getgenv().SafeExecute = function(func)
+    local success, err = pcall(func)
+    
+    if not success then
+        -- Log error but don't crash
+        warn("⚠️ Safe Execute Error:", err)
+        
+        -- Send to webhook if configured
+        if WEBHOOK_URL ~= "" then
+            pcall(function()
+                local requestFunc = syn and syn.request or http_request or request
+                if requestFunc then
+                    requestFunc({
+                        Url = WEBHOOK_URL,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = HttpService:JSONEncode({
+                            content = "**Script Error:**\n```\n" .. tostring(err) .. "\n```"
+                        })
+                    })
+                end
+            end)
+        end
+    end
+    
+    return success
+end
+
+print("✅ Anti-Detection System v6 Loaded")
+print("🛡️ Protection Layers: 10 Active")
+print("📊 Monitoring:", #SHADOW_BAN_ATTRS, "Attributes")
+
+-- ==========================================
+-- [ YOUR MAIN SCRIPT GOES HERE ]
+-- ==========================================
+
+-- ==========================================
 -- [ 1. โหลด Fluent UI Library ]
 -- ==========================================
 local Library = loadstring(game:HttpGetAsync("https://github.com/ActualMasterOogway/Fluent-Renewed/releases/latest/download/Fluent.luau"))()
