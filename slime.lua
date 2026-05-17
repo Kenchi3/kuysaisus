@@ -234,7 +234,7 @@ local UpgradeListParagraph = Tabs.Upgrades:CreateParagraph("CurrentUpgradesList"
 -- ========================
 -- Anti AFK
 -- ========================
-player.Idled:Connect(function()
+Player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
