@@ -47,6 +47,10 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VIM = game:GetService("VirtualInputManager")
 
+-- [เพิ่มเติม] โหลด UtilsSystem เพื่อเข้าถึง PlayerData
+local UtilsSystem = require(ReplicatedFirst:WaitForChild("AllSideCode"):WaitForChild("UtilsSystem"))
+local PlayerData = UtilsSystem.PlayerData
+
 -- ========================
 -- Anti AFK
 -- ========================
@@ -175,25 +179,30 @@ end
 
 --quest config
 local QuestData = {
-	["Dwarf"] = "任务3",
-	["Knife Goblin"] = "任务3",
-	["Warhammer Dwarf"] = "任务4",
-	["Archer Goblin"] = "任务5",
-	["Dwarf King"] = "任务6"
+    ["Dwarf"] = "任务3",
+    ["Knife Goblin"] = "任务3",
+    ["Warhammer Dwarf"] = "任务4",
+    ["Archer Goblin"] = "任务5",
+    ["Dwarf King"] = "任务6"
 }
 local questDropdownList = {}
 for name, _ in pairs(QuestData) do table.insert(questDropdownList, name) end
 table.sort(questDropdownList)
 
 -- ========================
--- Sell Item Config
+-- Sell Item Config (แก้ไข: เอา OnlyID ออก, เก็บแค่ ID ประเภท)
 -- ========================
 local SellItemData = {
-    ["Blueberry"] = {ItemID = 2000001, OnlyID = 1147}, ["Withered Mushroom"] = {ItemID = 2000002, OnlyID = 1146},
-    ["Seagull Egg"] = {ItemID = 2000003, OnlyID = 1145}, ["Dwarf Emblem"] = {ItemID = 2000004, OnlyID = 1144},
-    ["Golden Tooth"] = {ItemID = 2000005, OnlyID = 1149}, ["Flame Crest"] = {ItemID = 2000006, OnlyID = 1138},
-    ["Furnace Core"] = {ItemID = 2000010, OnlyID = 1059}, ["Goblin Finger"] = {ItemID = 2000007, OnlyID = 1148},
-    ["Goblin Bone"] = {ItemID = 2000008, OnlyID = 1150}, ["Copper Earring"] = {ItemID = 2000009, OnlyID = 1151}
+    ["Blueberry"] = {ItemID = 2000001}, 
+    ["Withered Mushroom"] = {ItemID = 2000002},
+    ["Seagull Egg"] = {ItemID = 2000003}, 
+    ["Dwarf Emblem"] = {ItemID = 2000004},
+    ["Golden Tooth"] = {ItemID = 2000005}, 
+    ["Flame Crest"] = {ItemID = 2000006},
+    ["Furnace Core"] = {ItemID = 2000010}, 
+    ["Goblin Finger"] = {ItemID = 2000007},
+    ["Goblin Bone"] = {ItemID = 2000008}, 
+    ["Copper Earring"] = {ItemID = 2000009}
 }
 local sellDropdownList = {}
 local sellNameToDataMap = {}
@@ -248,15 +257,15 @@ local ParryDelaySlider = Tabs.Main:AddSlider("ParryDelay", {
 
 local QuestSection = Tabs.Main:AddSection("Auto Quest")
 local QuestDropdown = Tabs.Main:AddDropdown("SelectQuest", {
-	Title = "Select Quest (Multi)",
-	Values = questDropdownList,
-	Multi = true,
-	Default = {}
+    Title = "Select Quest (Multi)",
+    Values = questDropdownList,
+    Multi = true,
+    Default = {}
 })
 
 local AutoQuestToggle = Tabs.Main:AddToggle("AutoQuest", {
-	Title = "Auto Accept Quest",
-	Default = false
+    Title = "Auto Accept Quest",
+    Default = false
 })
 
 local GetGamepass = Tabs.Main:AddButton({
@@ -284,7 +293,6 @@ RunService.Heartbeat:Connect(function()
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
     local humanoid = character and character:FindFirstChild("Humanoid")
     
-    -- แก้ Loop พัง: เช็คว่ามี HRP และ Humanoid และยังไม่ตาย
     if not hrp or not humanoid or humanoid.Health <= 0 then 
         CurrentTargetMob = nil
         return 
@@ -352,7 +360,6 @@ end)
 -- ==========================================
 task.spawn(function()
     while task.wait(0.1) do
-        -- แก้ Loop พัง: เช็คว่าเปิดทั้ง Farm และ Skill และมีเป้าหมาย
         if AutoFarmToggle.Value and AutoSkillToggle.Value and CurrentTargetMob then
             local selectedSkills = Options.SelectSkill.Value
             if selectedSkills and type(selectedSkills) == "table" then
@@ -360,17 +367,16 @@ task.spawn(function()
                     if isSelected then
                         local skillNum = tonumber(skillName)
                         if skillNum then
-                            -- ตรวจสอบอีกครั้งว่ามอบยังไม่ตายและยังอยู่ใน Workspace
                             if CurrentTargetMob and CurrentTargetMob.Parent then
                                 local hum = CurrentTargetMob:FindFirstChild("Humanoid")
                                 if hum and hum.Health > 0 then
                                      castskill(skillNum, CurrentTargetMob)
                                      task.wait(0.35)
                                 else
-                                     break -- มอบตายแล้วเลิกยิง
+                                     break 
                                 end
                             else
-                                break -- มอบหายไปเลิกยิง
+                                break 
                             end
                         end
                     end
@@ -381,51 +387,79 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 4.2 Smart Auto Sell Logic ]
+-- [ 4.2 Smart Auto Sell Logic (Fixed) ]
 -- ==========================================
 local isSelling = false
+
 local function checkAndSellItems()
     if isSelling then return end
     if not AutoSellToggle.Value then return end
+    
+    -- 1. ดึงรายการไอเทมที่เลือกจาก UI
     local selectedItems = Options.SelectItemToSell.Value
     if not selectedItems or type(selectedItems) ~= "table" or next(selectedItems) == nil then return end
-    local bagFolder = Player:FindFirstChild("Bag")
-    if not bagFolder then return end
 
-    local idsToSell = {}
-    local hasItem = false
+    -- 2. ดึงข้อมูลกระเป๋าจาก PlayerData (ของจริงในเกม)
+    local bagData = PlayerData.GetPlrDataByKey(Player, "Bag")
+    if not bagData or type(bagData) ~= "table" then return end
+
+    -- 3. สร้างตัวแปรเก็บ ID ประเภทที่จะขาย
+    local targetItemIds = {}
     for name, _ in pairs(selectedItems) do
-        local itemData = sellNameToDataMap[name]
-        if itemData then
-            local itemID = tostring(itemData.ItemID)
-            local itemInBag = bagFolder:FindFirstChild(itemID) or bagFolder:FindFirstChild(tonumber(itemID))
-            if itemInBag and itemInBag:IsA("NumberValue") and itemInBag.Value > 0 then
-                table.insert(idsToSell, itemData.OnlyID)
-                hasItem = true
+        local data = sellNameToDataMap[name]
+        if data and data.ItemID then
+            targetItemIds[data.ItemID] = true
+        end
+    end
+
+    -- 4. วนเช็คไอเทมในกระเป๋า หา OnlyID ที่ตรงกัน
+    local idsToSell = {}
+    for _, item in pairs(bagData) do
+        if type(item) == "table" then
+            local itemId = item.id
+            local onlyId = item.onlyID
+            
+            -- เช็คว่า ID ตรงกับที่เลือกไหม และมี OnlyID ไหม
+            if itemId and onlyId and targetItemIds[itemId] then
+                -- เช็ค Lock ถ้าล็อคไว้ (item.lock == 1) ก็ไม่ขาย
+                if not (item.lock and item.lock == 1) then
+                    table.insert(idsToSell, onlyId)
+                end
             end
         end
     end
-    if hasItem and #idsToSell > 0 then
+
+    -- 5. ถ้ามีไอเทมจะขาย ให้ยิง Remote ทีเดียว
+    if #idsToSell > 0 then
         isSelling = true
         local args = {"出售背包物品", { onlyIDList = idsToSell } }
-        pcall(function() SellRemote:InvokeServer(unpack(args)) end)
-        task.wait(1)
+        
+        -- ใช้ pcall เพื่อกัน error
+        local success, err = pcall(function()
+            SellRemote:InvokeServer(unpack(args))
+        end)
+        
+        if not success then
+            warn("Auto Sell Error:", err)
+        end
+        
+        task.wait(1) -- รอ 1 วินาทีก่อนรอบถัดไป
         isSelling = false
     end
 end
 
+-- วนลูปตรวจสอบทุก 3 วินาที
 task.spawn(function()
-    while task.wait(5) do
-        if AutoSellToggle.Value then checkAndSellItems() end
+    while task.wait(3) do
+        if AutoSellToggle.Value then 
+            checkAndSellItems() 
+        end
     end
 end)
 
-Player:WaitForChild("Bag").ChildAdded:Connect(function(child)
-    if AutoSellToggle.Value then
-        task.wait(0.5)
-        checkAndSellItems()
-    end
-end)
+-- เชื่อมกับ Event เมื่อมีไอเทมหลุดเข้ากระเป๋า (ChildAdded)
+-- หมายเหตุ: PlayerData เป็น Table ธรรมดา, ChildAdded อาจไม่ทำงานถ้าเกมไม่ได้ Sync ด้วย Instance
+-- แต่ Loop ด้านบนจะช่วยจัดการเรื่องนี้อยู่แล้ว
 
 -- ==========================================
 -- [ 5. Auto Parry Logic ]
@@ -473,7 +507,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ==========================================
--- [ 6. Auto Pick Logic (Cleaned & Fixed) ]
+-- [ 6. Auto Pick Logic ]
 -- ==========================================
 task.spawn(function()
     while task.wait(0.1) do
@@ -483,13 +517,12 @@ task.spawn(function()
                 local myDrops = dropFolder:FindFirstChild(tostring(Player.UserId))
                 if myDrops then
                     for _, dropItem in ipairs(myDrops:GetChildren()) do
-                        -- ตรวจสอบว่ายังอยู่ในเกมจริง (Parent ไม่เป็น nil)
                         if dropItem and dropItem.Parent and (dropItem:IsA("Vector3Value") or dropItem:IsA("BasePart")) then
                             local args = {"pick", dropItem}
                             pcall(function()
                                 PickRemote:FireServer(unpack(args))
                             end)
-                            task.wait(0.3) -- Delay ป้องกัน Spam
+                            task.wait(0.3)
                         end
                     end
                 end
@@ -502,38 +535,46 @@ end)
 -- [ 7. Auto Accept Quest System ]
 -- ==========================================
 task.spawn(function()
-	local lastQuestTime = 0
-	while task.wait(1) do
-		if AutoQuestToggle.Value then
-			-- ป้องกันการยิง Remote รัวๆ (ส่งทุก 3 วินาที)
-			if tick() - lastQuestTime < 3 then continue end
+    local lastQuestTime = 0
+    while task.wait(1) do
+        if AutoQuestToggle.Value then
+            -- ป้องกันการยิง Remote รัวๆ (ส่งทุก 3 วินาที)
+            if tick() - lastQuestTime < 3 then continue end
 
-			local selectedQuests = Options.SelectQuest.Value
-			if selectedQuests and type(selectedQuests) == "table" then
-				for questName, isSelected in pairs(selectedQuests) do
-					if isSelected then
-						local questId = QuestData[questName]
-						if questId then
-							local args = {
-								"发放任务", -- คำสั่งรับเควส
-								{ questId }
-							}
+            local selectedQuests = Options.SelectQuest.Value
+            if selectedQuests and type(selectedQuests) == "table" then
+                for questName, isSelected in pairs(selectedQuests) do
+                    if isSelected then
+                        local questId = QuestData[questName]
+                        if questId then
+                            -- 1. รับเควส
+                            local args = {
+                                "发放任务",
+                                { questId }
+                            }
+                            pcall(function()
+                                QuestRemote:InvokeServer(unpack(args))
+                            end)
 
-							-- ใช้ pcall เพื่อความปลอดภัย
-							local success, err = pcall(function()
-								QuestRemote:InvokeServer(unpack(args))
-							end)
-
-							if not success then
-								warn("Quest Error:", err)
-							end
-						end
-					end
-				end
-				lastQuestTime = tick()
-			end
-		end
-	end
+                            -- 2. ส่งเควส (Trigger Chat) - เพิ่มใหม่
+                            local submitArgs = {
+                                "触发聊天",
+                                {
+                                    "哈利因特",
+                                    "10010100"
+                                }
+                            }
+                            pcall(function()
+                                -- ใช้ PickRemote (ซึ่งกำหนดไว้เป็น Msg/RemoteEvent/RemoteEvent) ในการยิง
+                                PickRemote:FireServer(unpack(submitArgs))
+                            end)
+                        end
+                    end
+                end
+                lastQuestTime = tick()
+            end
+        end
+    end
 end)
 
 -- ========================
