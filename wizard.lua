@@ -729,7 +729,7 @@ task.spawn(function()
                     EquipRemote:InvokeServer(unpack(finishArgs))
                 end)
 
-                task.wait(10)
+                task.wait(5)
             end
         end
     end
