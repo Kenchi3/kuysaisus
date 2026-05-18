@@ -24,6 +24,18 @@ local Tabs = {
         Title = "Main",
         Icon = "phosphor-sword-bold"
     },
+    Brew = Window:CreateTab{
+        Title = "Brew Potion",
+        Icon = "phosphor-flask-bold"
+    },
+    Sell = Window:CreateTab{
+        Title = "Sell",
+        Icon = "phosphor-coins-bold"
+    },
+    Player = Window:CreateTab{ -- [เพิ่มใหม่] Tab Player
+        Title = "Player",
+        Icon = "phosphor-user-bold"
+    },
     Settings = Window:CreateTab{
         Title = "Settings",
         Icon = "settings"
@@ -190,7 +202,7 @@ for name, _ in pairs(QuestData) do table.insert(questDropdownList, name) end
 table.sort(questDropdownList)
 
 -- ========================
--- Sell Item Config (แก้ไข: เอา OnlyID ออก, เก็บแค่ ID ประเภท)
+-- Item Config (Material & Potion)
 -- ========================
 local SellItemData = {
     ["Blueberry"] = {ItemID = 2000001}, 
@@ -199,18 +211,63 @@ local SellItemData = {
     ["Dwarf Emblem"] = {ItemID = 2000004},
     ["Golden Tooth"] = {ItemID = 2000005}, 
     ["Flame Crest"] = {ItemID = 2000006},
-    ["Furnace Core"] = {ItemID = 2000010}, 
     ["Goblin Finger"] = {ItemID = 2000007},
     ["Goblin Bone"] = {ItemID = 2000008}, 
-    ["Copper Earring"] = {ItemID = 2000009}
+    ["Copper Earring"] = {ItemID = 2000009},
+    ["Furnace Core"] = {ItemID = 2000010}, 
 }
-local sellDropdownList = {}
-local sellNameToDataMap = {}
+
+local SellPotionData = {
+    -- Wind
+    ["Wind Blade Potion"] = {ItemID = 9001001},
+    ["Lithe Potion"] = {ItemID = 9001002},
+    ["Tornado Potion"] = {ItemID = 9001003},
+
+    -- Fire
+    ["Fire Arrow Potion"] = {ItemID = 9002001},
+    ["Meteor Potion"] = {ItemID = 9002002},
+    ["Dragon Breath Potion"] = {ItemID = 9002003},
+
+    -- Earth
+    ["Rock Blast Potion"] = {ItemID = 9004001},
+    ["Earth Shield Potion"] = {ItemID = 9004002},
+    ["Earth Spike Potion"] = {ItemID = 9004003},
+
+    -- Dark
+    ["Night Wraith Potion"] = {ItemID = 9005001},
+
+    -- Light
+    ["Radiant Sword Potion"] = {ItemID = 9006001},
+    ["Solar Flare Potion"] = {ItemID = 9006002},
+
+    -- Ice
+    ["Ice Spike Potion"] = {ItemID = 9008001},
+    ["Ice Turtle Potion"] = {ItemID = 9008002},
+    ["Frost Thorns Potion"] = {ItemID = 9008003},
+    ["Lotus Bloom Potion"] = {ItemID = 9008004},
+}
+
+-- สร้าง List และ Map สำหรับ Materials
+local materialDropdownList = {}
+local sellNameToDataMap = {} -- Map รวมทุกอย่าง (Name -> Data)
 for name, data in pairs(SellItemData) do
-    table.insert(sellDropdownList, name)
+    table.insert(materialDropdownList, name)
     sellNameToDataMap[name] = data
 end
-table.sort(sellDropdownList)
+table.sort(materialDropdownList)
+
+-- สร้าง List สำหรับ Potions
+local potionDropdownList = {}
+for name, data in pairs(SellPotionData) do
+    table.insert(potionDropdownList, name)
+    sellNameToDataMap[name] = data -- เก็บลง Map รวมด้วย
+end
+table.sort(potionDropdownList)
+
+-- สร้าง List สำหรับ Brew (ใช้แค่ Material)
+local brewDropdownList = {"None"}
+for _, v in ipairs(materialDropdownList) do table.insert(brewDropdownList, v) end
+
 
 -- ==========================================
 -- [ 3. สร้าง UI Elements ]
@@ -237,14 +294,6 @@ local AutoSkillToggle = Tabs.Main:AddToggle("AutoCastSkill", {
 local PickSection = Tabs.Main:AddSection("Auto Pick Drops")
 local AutoPickToggle = Tabs.Main:AddToggle("AutoPickDrops", {
     Title = "Auto Pick Drops", Default = false
-})
-
-local SellSection = Tabs.Main:AddSection("Auto Sell")
-local SellDropdown = Tabs.Main:AddDropdown("SelectItemToSell", {
-    Title = "Select Material to Sell", Values = sellDropdownList, Multi = true, Default = {}
-})
-local AutoSellToggle = Tabs.Main:AddToggle("AutoSell", {
-    Title = "Auto Sell Items", Default = false
 })
 
 local parrysecion = Tabs.Main:AddSection("Parry")
@@ -282,7 +331,57 @@ local GetGamepass = Tabs.Main:AddButton({
 })
 
 -- ==========================================
--- [ 4. Auto Farm Logic (Fixed Loop) ]
+-- [ Brew UI ]
+-- ==========================================
+local BrewSection = Tabs.Brew:AddSection("Auto Brew")
+
+local Mat1Dropdown = Tabs.Brew:AddDropdown("BrewMat1", { Title = "Material 1", Values = brewDropdownList, Default = 1 })
+local Mat2Dropdown = Tabs.Brew:AddDropdown("BrewMat2", { Title = "Material 2", Values = brewDropdownList, Default = 1 })
+local Mat3Dropdown = Tabs.Brew:AddDropdown("BrewMat3", { Title = "Material 3", Values = brewDropdownList, Default = 1 })
+local Mat4Dropdown = Tabs.Brew:AddDropdown("BrewMat4", { Title = "Material 4", Values = brewDropdownList, Default = 1 })
+local Mat5Dropdown = Tabs.Brew:AddDropdown("BrewMat5", { Title = "Material 5", Values = brewDropdownList, Default = 1 })
+
+local AutoBrewToggle = Tabs.Brew:AddToggle("AutoBrew", {
+    Title = "Auto Brew Potion",
+    Default = false
+})
+
+-- ==========================================
+-- [ Sell UI ]
+-- ==========================================
+local SellSection = Tabs.Sell:AddSection("Auto Sell")
+
+local SellMaterialDropdown = Tabs.Sell:AddDropdown("SelectMaterialToSell", {
+    Title = "Select Material to Sell", Values = materialDropdownList, Multi = true, Default = {}
+})
+
+local SellPotionDropdown = Tabs.Sell:AddDropdown("SelectPotionToSell", {
+    Title = "Select Potion to Sell", Values = potionDropdownList, Multi = true, Default = {}
+})
+
+local AutoSellToggle = Tabs.Sell:AddToggle("AutoSell", {
+    Title = "Auto Sell Items", Default = false
+})
+
+-- ==========================================
+-- [ Player UI ] (NEW)
+-- ==========================================
+local StatSection = Tabs.Player:AddSection("Auto Allocate Stats")
+
+local StatDropdown = Tabs.Player:AddDropdown("SelectStat", {
+    Title = "Select Stat to Allocate",
+    Values = {"Attack", "HP", "Cooling Reduction", "Movement Speed"},
+    Multi = true,
+    Default = {}
+})
+
+local AutoStatToggle = Tabs.Player:AddToggle("AutoAllocate", {
+    Title = "Auto Allocate Stat",
+    Default = false
+})
+
+-- ==========================================
+-- [ 4. Auto Farm Logic ]
 -- ==========================================
 local CurrentTargetMob = nil
 
@@ -356,7 +455,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ==========================================
--- [ 4.1 Auto Skill Loop (Fixed) ]
+-- [ 4.1 Auto Skill Loop ]
 -- ==========================================
 task.spawn(function()
     while task.wait(0.1) do
@@ -387,7 +486,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 4.2 Smart Auto Sell Logic (Fixed) ]
+-- [ 4.2 Smart Auto Sell Logic ]
 -- ==========================================
 local isSelling = false
 
@@ -395,33 +494,41 @@ local function checkAndSellItems()
     if isSelling then return end
     if not AutoSellToggle.Value then return end
     
-    -- 1. ดึงรายการไอเทมที่เลือกจาก UI
-    local selectedItems = Options.SelectItemToSell.Value
-    if not selectedItems or type(selectedItems) ~= "table" or next(selectedItems) == nil then return end
+    local selectedMaterials = Options.SelectMaterialToSell.Value
+    local selectedPotions = Options.SelectPotionToSell.Value
+    
+    if (not selectedMaterials or next(selectedMaterials) == nil) and (not selectedPotions or next(selectedPotions) == nil) then return end
 
-    -- 2. ดึงข้อมูลกระเป๋าจาก PlayerData (ของจริงในเกม)
     local bagData = PlayerData.GetPlrDataByKey(Player, "Bag")
     if not bagData or type(bagData) ~= "table" then return end
 
-    -- 3. สร้างตัวแปรเก็บ ID ประเภทที่จะขาย
     local targetItemIds = {}
-    for name, _ in pairs(selectedItems) do
-        local data = sellNameToDataMap[name]
-        if data and data.ItemID then
-            targetItemIds[data.ItemID] = true
+    
+    if selectedMaterials then
+        for name, _ in pairs(selectedMaterials) do
+            local data = sellNameToDataMap[name]
+            if data and data.ItemID then
+                targetItemIds[data.ItemID] = true
+            end
+        end
+    end
+    
+    if selectedPotions then
+        for name, _ in pairs(selectedPotions) do
+            local data = sellNameToDataMap[name]
+            if data and data.ItemID then
+                targetItemIds[data.ItemID] = true
+            end
         end
     end
 
-    -- 4. วนเช็คไอเทมในกระเป๋า หา OnlyID ที่ตรงกัน
     local idsToSell = {}
     for _, item in pairs(bagData) do
         if type(item) == "table" then
             local itemId = item.id
             local onlyId = item.onlyID
             
-            -- เช็คว่า ID ตรงกับที่เลือกไหม และมี OnlyID ไหม
             if itemId and onlyId and targetItemIds[itemId] then
-                -- เช็ค Lock ถ้าล็อคไว้ (item.lock == 1) ก็ไม่ขาย
                 if not (item.lock and item.lock == 1) then
                     table.insert(idsToSell, onlyId)
                 end
@@ -429,12 +536,10 @@ local function checkAndSellItems()
         end
     end
 
-    -- 5. ถ้ามีไอเทมจะขาย ให้ยิง Remote ทีเดียว
     if #idsToSell > 0 then
         isSelling = true
         local args = {"出售背包物品", { onlyIDList = idsToSell } }
         
-        -- ใช้ pcall เพื่อกัน error
         local success, err = pcall(function()
             SellRemote:InvokeServer(unpack(args))
         end)
@@ -443,12 +548,11 @@ local function checkAndSellItems()
             warn("Auto Sell Error:", err)
         end
         
-        task.wait(1) -- รอ 1 วินาทีก่อนรอบถัดไป
+        task.wait(1) 
         isSelling = false
     end
 end
 
--- วนลูปตรวจสอบทุก 3 วินาที
 task.spawn(function()
     while task.wait(3) do
         if AutoSellToggle.Value then 
@@ -456,10 +560,6 @@ task.spawn(function()
         end
     end
 end)
-
--- เชื่อมกับ Event เมื่อมีไอเทมหลุดเข้ากระเป๋า (ChildAdded)
--- หมายเหตุ: PlayerData เป็น Table ธรรมดา, ChildAdded อาจไม่ทำงานถ้าเกมไม่ได้ Sync ด้วย Instance
--- แต่ Loop ด้านบนจะช่วยจัดการเรื่องนี้อยู่แล้ว
 
 -- ==========================================
 -- [ 5. Auto Parry Logic ]
@@ -518,7 +618,8 @@ task.spawn(function()
                 if myDrops then
                     for _, dropItem in ipairs(myDrops:GetChildren()) do
                         if dropItem and dropItem.Parent and (dropItem:IsA("Vector3Value") or dropItem:IsA("BasePart")) then
-                            local args = {"pick", dropItem}
+                            local dropname = tonumber(dropItem.Name)
+                            local args = {"pick", dropname}
                             pcall(function()
                                 PickRemote:FireServer(unpack(args))
                             end)
@@ -538,7 +639,6 @@ task.spawn(function()
     local lastQuestTime = 0
     while task.wait(1) do
         if AutoQuestToggle.Value then
-            -- ป้องกันการยิง Remote รัวๆ (ส่งทุก 3 วินาที)
             if tick() - lastQuestTime < 3 then continue end
 
             local selectedQuests = Options.SelectQuest.Value
@@ -547,7 +647,6 @@ task.spawn(function()
                     if isSelected then
                         local questId = QuestData[questName]
                         if questId then
-                            -- 1. รับเควส
                             local args = {
                                 "发放任务",
                                 { questId }
@@ -556,7 +655,6 @@ task.spawn(function()
                                 QuestRemote:InvokeServer(unpack(args))
                             end)
 
-                            -- 2. ส่งเควส (Trigger Chat) - เพิ่มใหม่
                             local submitArgs = {
                                 "触发聊天",
                                 {
@@ -565,13 +663,126 @@ task.spawn(function()
                                 }
                             }
                             pcall(function()
-                                -- ใช้ PickRemote (ซึ่งกำหนดไว้เป็น Msg/RemoteEvent/RemoteEvent) ในการยิง
                                 PickRemote:FireServer(unpack(submitArgs))
                             end)
                         end
                     end
                 end
                 lastQuestTime = tick()
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- [ 8. Auto Brew Logic ]
+-- ==========================================
+task.spawn(function()
+    while task.wait(1) do
+        if AutoBrewToggle.Value then
+            local selectedMats = {
+                Options.BrewMat1.Value,
+                Options.BrewMat2.Value,
+                Options.BrewMat3.Value,
+                Options.BrewMat4.Value,
+                Options.BrewMat5.Value
+            }
+
+            local materialsTableStart = {} 
+            local materialsTableFinish = {} 
+            local hasMaterial = false
+
+            for _, matName in pairs(selectedMats) do
+                if matName ~= "None" then
+                    local data = sellNameToDataMap[matName] 
+                    if data and data.ItemID then
+                        materialsTableStart[data.ItemID] = (materialsTableStart[data.ItemID] or 0) + 1
+                        materialsTableFinish[tostring(data.ItemID)] = (materialsTableFinish[tostring(data.ItemID)] or 0) + 1
+                        hasMaterial = true
+                    end
+                end
+            end
+
+            if hasMaterial then
+                local startArgs = {
+                    "炼药游戏开始",
+                    {
+                        cauldronID = 8000001,
+                        materials = materialsTableStart
+                    }
+                }
+                pcall(function()
+                    EquipRemote:InvokeServer(unpack(startArgs))
+                end)
+
+                task.wait(0.5) 
+
+                local finishArgs = {
+                    "炼药",
+                    {
+                        cauldronID = 8000001,
+                        materials = materialsTableFinish,
+                        gameScore = 100
+                    }
+                }
+                pcall(function()
+                    EquipRemote:InvokeServer(unpack(finishArgs))
+                end)
+
+                task.wait(10)
+            end
+        end
+    end
+end)
+
+-- ==========================================
+-- [ 9. Auto Allocate Stat Logic ] (NEW)
+-- ==========================================
+local StatMap = {
+    ["Attack"] = 1,
+    ["HP"] = 5,
+    ["Cooling Reduction"] = 39,
+    ["Movement Speed"] = 41
+}
+
+task.spawn(function()
+    while task.wait(0.5) do
+        if AutoStatToggle.Value then
+            -- ตรวจสอบ Stat Point ใน Bag["5"]
+            local bag = Player:FindFirstChild("Bag")
+            if bag then
+                local statPointObj = bag:FindFirstChild("5")
+                if statPointObj and statPointObj:IsA("IntValue") or statPointObj:IsA("NumberValue") then
+                    local currentPoints = statPointObj.Value
+                    
+                    -- ถ้ามีแต้มอยู่
+                    if currentPoints > 0 then
+                        local selectedStats = Options.SelectStat.Value
+                        if selectedStats and type(selectedStats) == "table" then
+                            for statName, isSelected in pairs(selectedStats) do
+                                if isSelected then
+                                    -- ตรวจสอบอีกครั้งว่าแต้มยังเหลืออยู่ไหม (กันในกรณีใช้ไประหว่างลูป)
+                                    if statPointObj.Value <= 0 then break end
+                                    
+                                    local attrId = StatMap[statName]
+                                    if attrId then
+                                        local args = {
+                                            "属性加点",
+                                            {
+                                                AttrTp = attrId,
+                                                PointNum = 1
+                                            }
+                                        }
+                                        pcall(function()
+                                            EquipRemote:InvokeServer(unpack(args))
+                                        end)
+                                        task.wait(0.1) -- Delay เล็กน้อยระหว่างการเพิ่มแต่ละสถานะ
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
