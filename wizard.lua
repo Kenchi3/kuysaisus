@@ -62,6 +62,7 @@ local ReleaseEvent = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteE
 local EquipRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
 local PickRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):WaitForChild("RemoteEvent")
 local SellRemote = EquipRemote -- ใช้ Remote เดียวกับ Equip
+local QuestRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("Function"):WaitForChild("TalkFunc")
 
 local function castM1(targetChar)
     local myCharacter = Player.Character
@@ -142,8 +143,8 @@ if success and configData then
 end
 
 local MobTranslations = {
-    [5000001] = "Dwarf", [5000002] = "Hammer Dwarf", [5000004] = "Flying Knife Goblin",
-    [5000005] = "Bow Goblin", [5000006] = "Double Hammer Goblin", [5000007] = "Elite Hammer Goblin",
+    [5000001] = "Dwarf", [5000002] = "Warhammer Dwarf", [5000004] = "Knife Goblin",
+    [5000005] = "Archer Goblin", [5000006] = "Dwarf King", [5000007] = "Elite Hammer Goblin",
     [5000008] = "Elite Bow Goblin", [5001001] = "Blueberry Bush", [5001002] = "Mushroom Group",
     [5001003] = "Bird's Nest", [5001004] = "Large Blueberry Bush", [5001005] = "Large Mushroom Group",
     [5001006] = "Big Bird's Nest"
@@ -171,6 +172,18 @@ if enemyConfig then
         mobNameToIdMap[displayName] = id
     end
 end
+
+--quest config
+local QuestData = {
+	["Dwarf"] = "任务3",
+	["Knife Goblin"] = "任务3",
+	["Warhammer Dwarf"] = "任务4",
+	["Archer Goblin"] = "任务5",
+	["Dwarf King"] = "任务6"
+}
+local questDropdownList = {}
+for name, _ in pairs(QuestData) do table.insert(questDropdownList, name) end
+table.sort(questDropdownList)
 
 -- ========================
 -- Sell Item Config
@@ -231,6 +244,19 @@ local AutoParryToggle = Tabs.Main:AddToggle("AutoParry", {
 })
 local ParryDelaySlider = Tabs.Main:AddSlider("ParryDelay", {
     Title = "Parry Delay", Min = 0, Max = 1, Default = 0.5, Rounding = 1
+})
+
+local QuestSection = Tabs.Main:AddSection("Auto Quest")
+local QuestDropdown = Tabs.Main:AddDropdown("SelectQuest", {
+	Title = "Select Quest (Multi)",
+	Values = questDropdownList,
+	Multi = true,
+	Default = {}
+})
+
+local AutoQuestToggle = Tabs.Main:AddToggle("AutoQuest", {
+	Title = "Auto Accept Quest",
+	Default = false
 })
 
 local GetGamepass = Tabs.Main:AddButton({
@@ -470,6 +496,44 @@ task.spawn(function()
             end
         end
     end
+end)
+
+-- ==========================================
+-- [ 7. Auto Accept Quest System ]
+-- ==========================================
+task.spawn(function()
+	local lastQuestTime = 0
+	while task.wait(1) do
+		if AutoQuestToggle.Value then
+			-- ป้องกันการยิง Remote รัวๆ (ส่งทุก 3 วินาที)
+			if tick() - lastQuestTime < 3 then continue end
+
+			local selectedQuests = Options.SelectQuest.Value
+			if selectedQuests and type(selectedQuests) == "table" then
+				for questName, isSelected in pairs(selectedQuests) do
+					if isSelected then
+						local questId = QuestData[questName]
+						if questId then
+							local args = {
+								"发放任务", -- คำสั่งรับเควส
+								{ questId }
+							}
+
+							-- ใช้ pcall เพื่อความปลอดภัย
+							local success, err = pcall(function()
+								QuestRemote:InvokeServer(unpack(args))
+							end)
+
+							if not success then
+								warn("Quest Error:", err)
+							end
+						end
+					end
+				end
+				lastQuestTime = tick()
+			end
+		end
+	end
 end)
 
 -- ========================
