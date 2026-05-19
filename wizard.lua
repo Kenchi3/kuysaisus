@@ -605,7 +605,7 @@ RunService.Heartbeat:Connect(function()
             isParrying = true
             task.wait(Options.ParryDelay.Value)
             parryRemote:FireServer(5)
-            task.wait(0.2)
+            task.wait(0.5)
             parryRemote:FireServer(5, {skillButtonPhase = "up"})
             task.wait(0.5)
             isParrying = false
