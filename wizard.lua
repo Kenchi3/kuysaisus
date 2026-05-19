@@ -380,6 +380,13 @@ local AutoStatToggle = Tabs.Player:AddToggle("AutoAllocate", {
     Default = false
 })
 
+local AscendSection = Tabs.Player:AddSection("Auto Ascend")
+
+local AutoAscendToggle = Tabs.Player:AddToggle("AutoAscend", {
+	Title = "Auto Ascend / Rebirth",
+	Default = false
+})
+
 -- ==========================================
 -- [ 4. Auto Farm Logic ]
 -- ==========================================
@@ -784,6 +791,22 @@ task.spawn(function()
                     end
                 end
             end
+        end
+    end
+end)
+
+-- ==========================================
+-- [ Auto Ascend Logic ]
+-- ==========================================
+task.spawn(function()
+    while task.wait(5) do -- ตรวจสอบทุก 5 วินาที (ป้องกันการยิง Remote รัวๆ)
+        if AutoAscendToggle.Value then
+            local args = {
+                "\233\135\141\231\148\159" -- "重生"
+            }
+            pcall(function()
+                EquipRemote:InvokeServer(unpack(args))
+            end)
         end
     end
 end)
