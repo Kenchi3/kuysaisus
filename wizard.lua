@@ -32,7 +32,7 @@ local Tabs = {
         Title = "Sell",
         Icon = "phosphor-coins-bold"
     },
-    Player = Window:CreateTab{ -- [เพิ่มใหม่] Tab Player
+    Player = Window:CreateTab{
         Title = "Player",
         Icon = "phosphor-user-bold"
     },
@@ -59,7 +59,6 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VIM = game:GetService("VirtualInputManager")
 
--- [เพิ่มเติม] โหลด UtilsSystem เพื่อเข้าถึง PlayerData
 local UtilsSystem = require(ReplicatedFirst:WaitForChild("AllSideCode"):WaitForChild("UtilsSystem"))
 local PlayerData = UtilsSystem.PlayerData
 
@@ -77,7 +76,7 @@ end)
 local ReleaseEvent = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):WaitForChild("ReleaseGroupSkill")
 local EquipRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteFunction"):WaitForChild("RemoteFunction")
 local PickRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("RemoteEvent"):WaitForChild("RemoteEvent")
-local SellRemote = EquipRemote -- ใช้ Remote เดียวกับ Equip
+local SellRemote = EquipRemote
 local QuestRemote = ReplicatedStorage:WaitForChild("Msg"):WaitForChild("Function"):WaitForChild("TalkFunc")
 
 local function castM1(targetChar)
@@ -91,7 +90,7 @@ local function castM1(targetChar)
     end
 
     local args = {
-        [1] = 4, -- M1 Skill ID
+        [1] = 4,
         [2] = {
             ["targetCF"] = targetCF,
             ["trackTargetId"] = targetChar
@@ -120,7 +119,6 @@ local function castskill(skillId, targetChar)
     ReleaseEvent:FireServer(unpack(args))
 end
 
--- [เพิ่มฟังก์ชัน] Auto Equip Wand
 local lastEquipTime = 0
 local function autoEquipWand()
     if tick() - lastEquipTime < 3 then return end
@@ -148,48 +146,125 @@ local function autoEquipWand()
 end
 
 -- ========================
--- Mob Config & Translation
+-- Dynamic Config & Translation Loading (IMPROVED)
 -- ========================
-local enemyConfig = {}
-local success, configData = pcall(function()
-    return require(ReplicatedFirst:WaitForChild("AllSideCode"):WaitForChild("ToolBasic"):WaitForChild("ConfigInstance"))
-end)
-if success and configData then
-    enemyConfig = configData.enemyConf or {}
-end
+local ConfigModule = ReplicatedFirst:WaitForChild("AllSideCode"):WaitForChild("ToolBasic"):WaitForChild("ConfigInstance")
+local ConfigInstance = require(ConfigModule)
 
-local MobTranslations = {
-    [5000001] = "Dwarf", [5000002] = "Warhammer Dwarf", [5000004] = "Knife Goblin",
-    [5000005] = "Archer Goblin", [5000006] = "Dwarf King", [5000007] = "Elite Hammer Goblin",
-    [5000008] = "Elite Bow Goblin", [5001001] = "Blueberry Bush", [5001002] = "Mushroom Group",
-    [5001003] = "Bird's Nest", [5001004] = "Large Blueberry Bush", [5001005] = "Large Mushroom Group",
-    [5001006] = "Big Bird's Nest"
+local enemyConf = ConfigInstance.enemyConf or {}
+local materialConf = ConfigInstance.materialConf or {}
+local potionConf = ConfigInstance.potionConf or {}
+
+local LangModule = ReplicatedFirst:WaitForChild("AllSideCode"):WaitForChild("ToolBasic"):WaitForChild("TranslationHelper"):WaitForChild("Language")
+local LangData = require(LangModule)
+local localizationtableConf = LangData.localizationtableConf or {}
+
+-- ==========================================
+-- [ เพิ่มส่วนนี้: Manual Translation Table ]
+-- ==========================================
+-- ใส่ ID ของไอเทม/มอนเตอร์ ที่แปลผิดเพื่อบังคับชื่อที่ต้องการแสดงผล
+local ManualTranslations = {
+    -- ตัวอย่างจากรูปภาพ:
+    ["5021006"] = "Volcanic Rock",
+    ["5021007"] = "Fireproof Plant", -- เปลี่ยนเป็นชื่อจริงๆของไอเทมนี้แทนประโยคยาว
+    ["2000007"] = "Goblin Finger",
+    ["2000008"] = "Goblin Bone",
+    
+    -- คุณสามารถเพิ่มเติม ID อื่นๆ ที่แปลผิดได้ที่นี่ เช่น:
+    -- ["1234567"] = "Correct Item Name",
 }
 
-local function getMobName(id)
-    if MobTranslations[id] then return MobTranslations[id] end
-    if enemyConfig[id] then
-        local data = enemyConfig[id]
-        return data[4] or data[1] or "Unknown Mob"
-    end
-    return "Unknown Mob"
+-- ฟังก์ชันตรวจสอบว่า string เป็นชื่อที่ใช้ได้ (ไม่ใช่ตัวเลข, ไม่ว่าง, ยาวกว่า 1 ไบต์)
+local function isNameCandidate(s)
+    if type(s) ~= "string" then return false end
+    if s == "" then return false end
+    if tonumber(s) then return false end  -- กรอง "1", "2", "3" ออก
+    if #s <= 1 then return false end       -- กรองตัวอักษรเดี่ยวออก
+    return true
 end
 
+-- ฟังก์ชันเช็คว่าน่าจะเป็นคำอธิบาย (ประโยคยาว) หรือไม่
+local function isLikelyDescription(s)
+    if not s then return false end
+    -- ถ้าข้อความยาวเกิน 30 ตัวอักษร หรือมีเว้นวรรคเยอะ (มากกว่า 4 คำ) ให้ถือว่าเป็นคำอธิบาย
+    if #s > 30 then return true end
+    local wordCount = select(2, string.gsub(s, "%S+", ""))
+    if wordCount > 4 then return true end
+    return false
+end
+
+-- ฟังก์ชันดึงชื่อ + แปลอัตโนมัติแบบฉลาด (เพิ่ม id เข้าไปเพื่อเช็ค Manual)
+local function getLocalizedName(id, data, preferredIndices)
+    -- 1. เช็คจาก Manual Translations ก่อนอันดับแรก (ถ้ามี)
+    local strId = tostring(id)
+    if ManualTranslations[strId] then
+        return ManualTranslations[strId]
+    end
+    
+    if type(data) ~= "table" then return "Unknown" end
+    
+    -- 2. ลองจาก preferred indices (ตามลำดับที่ระบุ)
+    if preferredIndices then
+        for _, idx in ipairs(preferredIndices) do
+            local v = data[idx]
+            if isNameCandidate(v) and not isLikelyDescription(v) then
+                local trans = localizationtableConf[v]
+                if trans and trans[2] and trans[2] ~= "" then
+                    return trans[2]
+                end
+                return v  -- ใช้ชื่อจีนถ้าไม่มีคำแปล
+            end
+        end
+    end
+    
+    -- 3. Fallback: หา string ที่ดีที่สุดจากทุก field (กรองคำอธิบายออก)
+    local translatedCandidate = nil
+    local untranslatedCandidate = nil
+    
+    for i, v in pairs(data) do
+        if isNameCandidate(v) and not isLikelyDescription(v) then
+            local trans = localizationtableConf[v]
+            if trans and trans[2] and trans[2] ~= "" then
+                -- มีคำแปล: เลือกอันที่สั้นที่สุด (ชื่อสั้นกว่าคำอธิบายเสมอ)
+                if not translatedCandidate or #v < #translatedCandidate.raw then
+                    translatedCandidate = {raw = v, translated = trans[2]}
+                end
+            else
+                -- ไม่มีคำแปล: เก็บไว้เป็นตัวเลือกสำรอง
+                if not untranslatedCandidate or #v < #untranslatedCandidate then
+                    untranslatedCandidate = v
+                end
+            end
+        end
+    end
+    
+    -- ให้ลำดับความสำคัญ: มีคำแปล > ไม่มีคำแปล
+    if translatedCandidate then return translatedCandidate.translated end
+    if untranslatedCandidate then return untranslatedCandidate end
+    
+    return "Unknown"
+end
+
+-- สร้าง Mob Dropdown
 local mobDropdownList = {}
 local mobNameToIdMap = {}
-if enemyConfig then
+do
     local mobIds = {}
-    for id, _ in pairs(enemyConfig) do table.insert(mobIds, id) end
+    for id, _ in pairs(enemyConf) do table.insert(mobIds, id) end
     table.sort(mobIds)
-    for _, id in pairs(mobIds) do
-        local name = getMobName(id)
-        local displayName = string.format("%s (ID: %s)", name, id)
-        table.insert(mobDropdownList, displayName)
-        mobNameToIdMap[displayName] = id
+    
+    for _, id in ipairs(mobIds) do
+        local data = enemyConf[id]
+        -- **ส่ง id เข้าไปในฟังก์ชันด้วย**
+        local displayName = getLocalizedName(id, data, {1, 5, 4})
+        local entry = string.format("%s (ID: %s)", displayName, id)
+        
+        table.insert(mobDropdownList, entry)
+        mobNameToIdMap[entry] = id
     end
 end
 
---quest config
+-- Quest Config
 local QuestData = {
     ["Dwarf"] = "任务3",
     ["Knife Goblin"] = "任务3",
@@ -201,79 +276,55 @@ local questDropdownList = {}
 for name, _ in pairs(QuestData) do table.insert(questDropdownList, name) end
 table.sort(questDropdownList)
 
--- ========================
--- Item Config (Material & Potion)
--- ========================
-local SellItemData = {
-    ["Blueberry"] = {ItemID = 2000001}, 
-    ["Withered Mushroom"] = {ItemID = 2000002},
-    ["Seagull Egg"] = {ItemID = 2000003}, 
-    ["Dwarf Emblem"] = {ItemID = 2000004},
-    ["Golden Tooth"] = {ItemID = 2000005}, 
-    ["Flame Crest"] = {ItemID = 2000006},
-    ["Goblin Finger"] = {ItemID = 2000007},
-    ["Goblin Bone"] = {ItemID = 2000008}, 
-    ["Copper Earring"] = {ItemID = 2000009},
-    ["Furnace Core"] = {ItemID = 2000010}, 
-}
-
-local SellPotionData = {
-    -- Wind
-    ["Wind Blade Potion"] = {ItemID = 9001001},
-    ["Lithe Potion"] = {ItemID = 9001002},
-    ["Tornado Potion"] = {ItemID = 9001003},
-
-    -- Fire
-    ["Fire Arrow Potion"] = {ItemID = 9002001},
-    ["Meteor Potion"] = {ItemID = 9002002},
-    ["Dragon Breath Potion"] = {ItemID = 9002003},
-
-    -- Earth
-    ["Rock Blast Potion"] = {ItemID = 9004001},
-    ["Earth Shield Potion"] = {ItemID = 9004002},
-    ["Earth Spike Potion"] = {ItemID = 9004003},
-
-    -- Dark
-    ["Night Wraith Potion"] = {ItemID = 9005001},
-
-    -- Light
-    ["Radiant Sword Potion"] = {ItemID = 9006001},
-    ["Solar Flare Potion"] = {ItemID = 9006002},
-
-    -- Ice
-    ["Ice Spike Potion"] = {ItemID = 9008001},
-    ["Ice Turtle Potion"] = {ItemID = 9008002},
-    ["Frost Thorns Potion"] = {ItemID = 9008003},
-    ["Lotus Bloom Potion"] = {ItemID = 9008004},
-}
-
--- สร้าง List และ Map สำหรับ Materials
+-- สร้าง Material & Potion Dropdown
 local materialDropdownList = {}
-local sellNameToDataMap = {} -- Map รวมทุกอย่าง (Name -> Data)
-for name, data in pairs(SellItemData) do
-    table.insert(materialDropdownList, name)
-    sellNameToDataMap[name] = data
-end
-table.sort(materialDropdownList)
-
--- สร้าง List สำหรับ Potions
 local potionDropdownList = {}
-for name, data in pairs(SellPotionData) do
-    table.insert(potionDropdownList, name)
-    sellNameToDataMap[name] = data -- เก็บลง Map รวมด้วย
-end
-table.sort(potionDropdownList)
-
--- สร้าง List สำหรับ Brew (ใช้แค่ Material)
+local sellNameToDataMap = {} 
 local brewDropdownList = {"None"}
-for _, v in ipairs(materialDropdownList) do table.insert(brewDropdownList, v) end
 
+do
+    local matIds = {}
+    for id, _ in pairs(materialConf) do table.insert(matIds, id) end
+    table.sort(matIds)
+    
+    for _, id in ipairs(matIds) do
+        local data = materialConf[id]
+        -- **ส่ง id เข้าไปในฟังก์ชันด้วย**
+        local displayName = getLocalizedName(id, data, {1, 16})
+        local entry = string.format("%s (ID: %s)", displayName, id)
+        
+        table.insert(materialDropdownList, entry)
+        sellNameToDataMap[entry] = { ItemID = id }
+        table.insert(brewDropdownList, entry)
+    end
 
+    local potIds = {}
+    for id, _ in pairs(potionConf) do table.insert(potIds, id) end
+    table.sort(potIds)
+    
+    for _, id in ipairs(potIds) do
+        local data = potionConf[id]
+        -- **ส่ง id เข้าไปในฟังก์ชันด้วย**
+        local displayName = getLocalizedName(id, data, {4, 1, 10})
+        local entry = string.format("%s (ID: %s)", displayName, id)
+        
+        table.insert(potionDropdownList, entry)
+        sellNameToDataMap[entry] = { ItemID = id }
+    end
+
+    table.sort(materialDropdownList)
+    table.sort(potionDropdownList)
+    table.sort(brewDropdownList, function(a, b) 
+        if a == "None" then return true end
+        if b == "None" then return false end
+        return a < b 
+    end)
+end
 -- ==========================================
 -- [ 3. สร้าง UI Elements ]
 -- ==========================================
 local MobDropdown = Tabs.Main:AddDropdown("SelectMob", {
-    Title = "Select Mob (Multi)", Values = mobDropdownList, Multi = true, Default = {}
+    Title = "Select Mob (Multi)", Values = mobDropdownList, Multi = true, Default = {},Searchable = true,
 })
 local MethodDropdown = Tabs.Main:AddDropdown("FarmMethod", {
     Title = "Farm Method", Values = { "Behind", "Above", "Below" }, Multi = false, Default = 1
@@ -301,7 +352,7 @@ local AutoParryToggle = Tabs.Main:AddToggle("AutoParry", {
     Title = "Auto Parry", Default = false
 })
 local ParryDelaySlider = Tabs.Main:AddSlider("ParryDelay", {
-    Title = "Parry Delay", Min = 0, Max = 1, Default = 0.5, Rounding = 1
+    Title = "Parry Delay", Min = 0, Max = 1, Default = 0.5, Rounding = 2
 })
 
 local QuestSection = Tabs.Main:AddSection("Auto Quest")
@@ -335,11 +386,11 @@ local GetGamepass = Tabs.Main:AddButton({
 -- ==========================================
 local BrewSection = Tabs.Brew:AddSection("Auto Brew")
 
-local Mat1Dropdown = Tabs.Brew:AddDropdown("BrewMat1", { Title = "Material 1", Values = brewDropdownList, Default = 1 })
-local Mat2Dropdown = Tabs.Brew:AddDropdown("BrewMat2", { Title = "Material 2", Values = brewDropdownList, Default = 1 })
-local Mat3Dropdown = Tabs.Brew:AddDropdown("BrewMat3", { Title = "Material 3", Values = brewDropdownList, Default = 1 })
-local Mat4Dropdown = Tabs.Brew:AddDropdown("BrewMat4", { Title = "Material 4", Values = brewDropdownList, Default = 1 })
-local Mat5Dropdown = Tabs.Brew:AddDropdown("BrewMat5", { Title = "Material 5", Values = brewDropdownList, Default = 1 })
+local Mat1Dropdown = Tabs.Brew:AddDropdown("BrewMat1", { Title = "Material 1", Values = brewDropdownList, Default = 1, Searchable = true,})
+local Mat2Dropdown = Tabs.Brew:AddDropdown("BrewMat2", { Title = "Material 2", Values = brewDropdownList, Default = 1, Searchable = true, })
+local Mat3Dropdown = Tabs.Brew:AddDropdown("BrewMat3", { Title = "Material 3", Values = brewDropdownList, Default = 1, Searchable = true, })
+local Mat4Dropdown = Tabs.Brew:AddDropdown("BrewMat4", { Title = "Material 4", Values = brewDropdownList, Default = 1, Searchable = true, })
+local Mat5Dropdown = Tabs.Brew:AddDropdown("BrewMat5", { Title = "Material 5", Values = brewDropdownList, Default = 1, Searchable = true, })
 
 local AutoBrewToggle = Tabs.Brew:AddToggle("AutoBrew", {
     Title = "Auto Brew Potion",
@@ -352,11 +403,11 @@ local AutoBrewToggle = Tabs.Brew:AddToggle("AutoBrew", {
 local SellSection = Tabs.Sell:AddSection("Auto Sell")
 
 local SellMaterialDropdown = Tabs.Sell:AddDropdown("SelectMaterialToSell", {
-    Title = "Select Material to Sell", Values = materialDropdownList, Multi = true, Default = {}
+    Title = "Select Material to Sell", Values = materialDropdownList, Multi = true, Default = {}, Searchable = true,
 })
 
 local SellPotionDropdown = Tabs.Sell:AddDropdown("SelectPotionToSell", {
-    Title = "Select Potion to Sell", Values = potionDropdownList, Multi = true, Default = {}
+    Title = "Select Potion to Sell", Values = potionDropdownList, Multi = true, Default = {}, Searchable = true,
 })
 
 local AutoSellToggle = Tabs.Sell:AddToggle("AutoSell", {
@@ -364,7 +415,7 @@ local AutoSellToggle = Tabs.Sell:AddToggle("AutoSell", {
 })
 
 -- ==========================================
--- [ Player UI ] (NEW)
+-- [ Player UI ]
 -- ==========================================
 local StatSection = Tabs.Player:AddSection("Auto Allocate Stats")
 
@@ -383,8 +434,8 @@ local AutoStatToggle = Tabs.Player:AddToggle("AutoAllocate", {
 local AscendSection = Tabs.Player:AddSection("Auto Ascend")
 
 local AutoAscendToggle = Tabs.Player:AddToggle("AutoAscend", {
-	Title = "Auto Ascend / Rebirth",
-	Default = false
+    Title = "Auto Ascend / Rebirth",
+    Default = false
 })
 
 -- ==========================================
@@ -601,13 +652,12 @@ RunService.Heartbeat:Connect(function()
     
     if nearestMob and not isParrying then
         local isAttacking = nearestMob:GetAttribute("SkillActionLock")
-        if isAttacking == true and minDist <= 20 then
+        if isAttacking == true and minDist <= 30 then
             isParrying = true
             task.wait(Options.ParryDelay.Value)
             parryRemote:FireServer(5)
-            task.wait(0.5)
+            task.wait(0.3)
             parryRemote:FireServer(5, {skillButtonPhase = "up"})
-            task.wait(0.5)
             isParrying = false
         end
     end
@@ -743,7 +793,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- [ 9. Auto Allocate Stat Logic ] (NEW)
+-- [ 9. Auto Allocate Stat Logic ]
 -- ==========================================
 local StatMap = {
     ["Attack"] = 1,
@@ -755,20 +805,17 @@ local StatMap = {
 task.spawn(function()
     while task.wait(0.5) do
         if AutoStatToggle.Value then
-            -- ตรวจสอบ Stat Point ใน Bag["5"]
             local bag = Player:FindFirstChild("Bag")
             if bag then
                 local statPointObj = bag:FindFirstChild("5")
                 if statPointObj and statPointObj:IsA("IntValue") or statPointObj:IsA("NumberValue") then
                     local currentPoints = statPointObj.Value
                     
-                    -- ถ้ามีแต้มอยู่
                     if currentPoints > 0 then
                         local selectedStats = Options.SelectStat.Value
                         if selectedStats and type(selectedStats) == "table" then
                             for statName, isSelected in pairs(selectedStats) do
                                 if isSelected then
-                                    -- ตรวจสอบอีกครั้งว่าแต้มยังเหลืออยู่ไหม (กันในกรณีใช้ไประหว่างลูป)
                                     if statPointObj.Value <= 0 then break end
                                     
                                     local attrId = StatMap[statName]
@@ -783,7 +830,7 @@ task.spawn(function()
                                         pcall(function()
                                             EquipRemote:InvokeServer(unpack(args))
                                         end)
-                                        task.wait(0.1) -- Delay เล็กน้อยระหว่างการเพิ่มแต่ละสถานะ
+                                        task.wait(0.1)
                                     end
                                 end
                             end
@@ -799,10 +846,10 @@ end)
 -- [ Auto Ascend Logic ]
 -- ==========================================
 task.spawn(function()
-    while task.wait(5) do -- ตรวจสอบทุก 5 วินาที (ป้องกันการยิง Remote รัวๆ)
+    while task.wait(5) do
         if AutoAscendToggle.Value then
             local args = {
-                "\233\135\141\231\148\159" -- "重生"
+                "\233\135\141\231\148\159"
             }
             pcall(function()
                 EquipRemote:InvokeServer(unpack(args))
